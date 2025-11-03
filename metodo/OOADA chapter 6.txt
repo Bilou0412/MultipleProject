@@ -1,0 +1,19 @@
+Traits of Successful Projects
+    ■Existence of a strong architectural vision
+
+        ■ They are constructed in well-defined layers of abstraction, each layer repre-
+        senting a coherent abstraction, provided through a well-defined and con-
+        trolled interface, and built on equally well-defined and controlled facilities
+        at lower levels of abstraction.
+        
+        ■ There is a clear separation of concerns between the interface and implemen-
+        tation of each layer, making it possible to change the implementation of a
+        layer without violating the assumptions made by its clients.
+        
+        ■ The architecture is simple: Common behavior is achieved through common
+        abstractions and common mechanisms.
+
+    ■ Application of a well-managed iterative and incremental development
+    lifecycle
+
+    
