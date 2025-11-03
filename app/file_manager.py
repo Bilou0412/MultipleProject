@@ -1,40 +1,34 @@
 from abc import ABC, abstractmethod
+from pypdf import PdfReader
 
 
 class UserEntries(ABC):
     def __init__(self, path):
         self.path = path
-        self.row_data = None
+        self.raw_data = None
 
-    @abstractmethod
-    def get_row_data(self):
-        pass
+    def get_raw_data(self):
+        self.raw_data = extract_pdf(self.path)
 
 
 class JobOpening(UserEntries):
     def __init__(self, path):
         super().__init__(path)
 
-    def get_row_data(self):
-        try:
-            with open(self.path, "r") as f:
-                self.row_data = f.read()
-        except Exception as e:
-            print(f"ERROR : {e}")
-
 
 class Cv(UserEntries):
     def __init__(self, path):
         super().__init__(path)
 
-    def get_row_data(self):
-        try:
-            with open(self.path, "r") as f:
-                self.row_data = f.read()
-        except Exception as e:
-            print(f"ERROR : {e}")
-
 
 class Lm(UserEntries):
     def __init__(self):
         print()
+
+
+def extract_pdf(path):
+    reader = PdfReader(path)
+    pdf_pages = []
+    for page in reader.pages:
+        pdf_pages.append(page.extract_text())
+    return ("".join(pdf_pages))
