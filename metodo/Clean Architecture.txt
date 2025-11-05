@@ -96,5 +96,33 @@ C’est la partie qui doit pouvoir être testée seule.
 
 🎯 Objectif : ton scénario fonctionne “dans le vide”, avec des dépendances fictives.
 
+l'idee c'est que la class usecase recois les dependance
+on exporte toutes les class abstraite (ports )
+
+on lui cree une fonction ou plus mais la plupart du temps c'est 
+execute()ou 
+run()ou 
+handle()
+
+on init la class aussi avec les port don on a besoin .
+ca donne ca :
+from domain.ports.document_parser import DocumentParser
+from domain.ports.llm_service import LlmService
+from domain.ports.pdf_generator import PdfGenerator
+
+
+class AnalyseCvOffer:
+    def __init__(self, document_parser:DocumentParser, llm:LlmService, pdf_generator:PdfGenerator):
+        self.document_parser = document_parser
+        self.llm = llm
+        self.pdf_generator = pdf_generator
+
+
+    def execute(self):
+        pass
+
+
+et la on peux bosser sur le code metier.
+
 
 
