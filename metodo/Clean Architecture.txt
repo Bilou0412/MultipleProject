@@ -124,5 +124,3 @@ class AnalyseCvOffer:
 
 et la on peux bosser sur le code metier.
 
-
-

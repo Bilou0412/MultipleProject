@@ -1,3 +1,5 @@
-class Cv:
-    def __init__(self, raw_text:str):
-        self.raw_text = raw_text
+from domain.entities.document import Document
+
+
+class Cv(Document):
+    pass
