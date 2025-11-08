@@ -13,9 +13,9 @@ class AnalyseCvOffer:
         self.pdf_generator = pdf_generator
 
     def execute(self):
-        cv_raw_text = self.document_parser.parse_document("data/input/CV.pdf")
+        cv_raw_text = self.document_parser.parse_document(input_path="data/input/CV.pdf")
         job_offer_raw_text = self.document_parser.parse_document(
-            "data/input/JO.pdf")
+            input_path="data/input/JO.pdf")
         cv = Cv(cv_raw_text)
         job_offer = JobOffer(job_offer_raw_text)
         prompt = self._create_prompt(cv, job_offer)
@@ -26,5 +26,31 @@ class AnalyseCvOffer:
 
         return (path_pdf)
 
-    def _create_prompt(self, cv: Cv, job_offer: JobOffer):
-        pass
+    def _create_prompt(self, cv: Cv, job_offer: JobOffer) -> str:
+        prompt = f"""
+        Tu es un assistant expert en rédaction professionnelle.
+    
+        🎯 Objectif :
+        Rédige une **lettre de motivation complète et immédiatement exploitable**,
+        adaptée à l’offre d’emploi et au CV ci-dessous.
+    
+        ⚙️ Règles :
+        - Donne uniquement le texte final de la lettre, sans aucun commentaire, balise, guillemet, ou texte d’explication.
+        - Ne mets **aucun élément entre crochets** (pas de [Date], [Nom], etc.).
+        - Si une information manque (par ex. adresse, nom du recruteur), écris une **formule naturelle générique** (ex. "Madame, Monsieur," ou "le service recrutement").
+        - Formate la lettre pour être prête à l’envoi (coordonnées en haut, objet, paragraphes bien séparés, signature).
+        - Langue : français professionnel, fluide et naturel.
+        - Ton : motivé, sincère, précis, sans exagération.
+    
+        🧾 Texte du CV :
+        {cv.raw_text}
+    
+        📄 Texte de l’offre d’emploi :
+        {job_offer.raw_text}
+    
+        🪶 Rédige maintenant la lettre de motivation finale :
+        """
+        return prompt.strip()
+
+
+
