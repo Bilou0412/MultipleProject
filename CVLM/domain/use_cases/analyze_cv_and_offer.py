@@ -1,21 +1,22 @@
 from domain.ports.document_parser import DocumentParser
 from domain.ports.llm_service import LlmService
 from domain.ports.pdf_generator import PdfGenerator
+from domain.ports.job_offer_fetcher import JobOfferFetcher
 from domain.entities.cv import Cv
 from domain.entities.job_offer import JobOffer
 from domain.entities.motivational_letter import MotivationalLetter
 
 
 class AnalyseCvOffer:
-    def __init__(self, document_parser: DocumentParser, llm: LlmService, pdf_generator: PdfGenerator):
+    def __init__(self,job_offer_fetcher: JobOfferFetcher, document_parser: DocumentParser, llm: LlmService, pdf_generator: PdfGenerator):
         self.document_parser = document_parser
         self.llm = llm
         self.pdf_generator = pdf_generator
+        self.job_offer_fetcher = job_offer_fetcher
 
     def execute(self):
         cv_raw_text = self.document_parser.parse_document(input_path="data/input/CV.pdf")
-        job_offer_raw_text = self.document_parser.parse_document(
-            input_path="data/input/JO.pdf")
+        job_offer_raw_text = self.job_offer_fetcher.fetch("https://www.welcometothejungle.com/fr/companies/elax-energie/jobs/lead-dev-python-cdi-remote_paris")
         cv = Cv(cv_raw_text)
         job_offer = JobOffer(job_offer_raw_text)
         prompt = self._create_prompt(cv, job_offer)

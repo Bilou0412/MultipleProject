@@ -6,7 +6,7 @@ from google import genai
 # Charger les variables d'environnement
 load_dotenv()
 
-class llmapi:
+class LlmGemini:
     def __init__(self):
         # Récupérer la clé API depuis les variables d'environnement
         self.api_key = os.getenv('GOOGLE_API_KEY')
