@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVLM – Générateur de Lettres de Motivation</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --primary-light: #3b82f6;
+            --surface: #ffffff;
+            --surface-secondary: #f9fafb;
+            --border: #e5e7eb;
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --text-tertiary: #9ca3af;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: var(--surface-secondary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 28px;
+            text-align: center;
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            border-radius: var(--radius-md);
+            color: white;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow-md);
+        }
+
+        .heading h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            letter-spacing: -0.5px;
+        }
+
+        .heading p {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* Card */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            box-shadow: var(--shadow-md);
+            flex: 1;
+        }
+
+        /* Sections */
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section:last-child {
+            margin-bottom: 0;
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .section-title span {
+            font-size: 14px;
+        }
+
+        /* URL Display */
+        .url-display {
+            background: var(--surface-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            font-size: 13px;
+            word-break: break-all;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-top: 8px;
+        }
+
+        /* File Input */
+        .file-input-wrapper {
+            position: relative;
+            display: block;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 24px 16px;
+            background: var(--surface-secondary);
+            border: 2px dashed var(--border);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .file-input-label:hover {
+            background: var(--surface);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .file-input-label span {
+            font-size: 20px;
+        }
+
+        .file-name {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--success);
+            text-align: center;
+            font-weight: 500;
+        }
+
+        /* Selects */
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: var(--surface);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 500;
+            outline: none;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        select:hover {
+            border-color: var(--primary-light);
+        }
+
+        select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Grid */
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 16px;
+            border: 1px solid transparent;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-primary:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--surface-secondary);
+            border-color: var(--border);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--surface);
+            border-color: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .btn-danger {
+            background: transparent;
+            border-color: var(--error);
+            color: var(--error);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.05);
+        }
+
+        /* Status Messages */
+        .status {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            display: none;
+            border: 1px solid;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: rgba(16, 185, 129, 0.08);
+            color: #059669;
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .status.error {
+            background: rgba(239, 68, 68, 0.08);
+            color: #dc2626;
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .status.info {
+            background: rgba(37, 99, 235, 0.08);
+            color: #1e40af;
+            border-color: rgba(37, 99, 235, 0.3);
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 24px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Empty State */
+        .no-url {
+            text-align: center;
+            padding: 40px 16px;
+        }
+
+        .no-url-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.8;
+        }
+
+        .no-url p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* Divider */
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 16px 0;
+        }
+
+        /* Utility */
+        .text-center {
+            text-align: center;
+        }
+
+        .mt-sm {
+            margin-top: 8px;
+        }
+
+        .mt-md {
+            margin-top: 16px;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .container {
+                padding: 16px;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .heading h1 {
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">✦</div>
+            <div class="heading">
+                <h1>CVLM</h1>
+                <p>Générateur de Lettres de Motivation</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div id="no-url-message" class="no-url" style="display: none;">
+                <div class="no-url-icon">📍</div>
+                <p>Ouvrez une annonce d'emploi sur <strong>LinkedIn, Welcome to the Jungle</strong> ou <strong>Indeed</strong> pour commencer.</p>
+            </div>
+
+            <div id="main-content">
+                <!-- Section 1: URL -->
+                <div class="section">
+                    <div class="section-title">
+                        <span>🔗</span>
+                        Offre d'emploi détectée
+                    </div>
+                    <div id="job-url" class="url-display">Chargement...</div>
+                    <div class="hint">💡 Conseil : Ouvrez CVLM directement depuis la page de l'offre.</div>
+                </div>
+
+                <!-- Section 2: CV Upload -->
+                <div class="section">
+                    <div class="section-title">
+                        <span>📄</span>
+                        Importez votre CV
+                    </div>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="cv-file" accept=".pdf">
+                        <label for="cv-file" class="file-input-label">
+                            <span>📎</span>
+                            <div>Glissez-déposez votre PDF ici</div>
+                            <div style="font-size: 12px; color: var(--text-tertiary);">ou cliquez pour sélectionner</div>
+                        </label>
+                    </div>
+                    <div id="file-name" class="file-name"></div>
+                </div>
+
+                <!-- Section 3: Settings -->
+                <div class="section">
+                    <div class="section-title">
+                        <span>⚙️</span>
+                        Paramètres
+                    </div>
+                    <div class="row">
+                        <div>
+                            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Service IA</label>
+                            <select id="llm-select">
+                                <option value="openai">OpenAI (GPT-4)</option>
+                                <option value="gemini">Google Gemini</option>
+                                <option value="claude">Claude 3 Opus</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Format PDF</label>
+                            <select id="pdf-select">
+                                <option value="fpdf">Rapide (FPDF)</option>
+                                <option value="weasyprint">Premium (WeasyPrint)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <button id="generate-btn" class="btn btn-primary mt-md">
+                    <span>✨</span>
+                    Générer ma lettre
+                </button>
+
+                <!-- Loading State -->
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
+                    <p class="hint">Génération en cours... Veuillez patienter</p>
+                </div>
+
+                <!-- Status Messages -->
+                <div id="status" class="status"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="generator.js"></script>
+</body>
+</html>
