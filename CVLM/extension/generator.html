@@ -37,20 +37,21 @@
             background: var(--surface-secondary);
             color: var(--text-primary);
             line-height: 1.6;
+            width: 420px;
+            min-height: 600px;
+            overflow-x: hidden;
         }
 
         .container {
-            max-width: 480px;
-            margin: 0 auto;
-            padding: 20px;
-            min-height: 100vh;
+            width: 100%;
+            padding: 16px;
             display: flex;
             flex-direction: column;
         }
 
         /* Header */
         .header {
-            margin-bottom: 28px;
+            margin-bottom: 20px;
             text-align: center;
         }
 
@@ -58,19 +59,19 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 48px;
-            height: 48px;
+            width: 40px;
+            height: 40px;
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
             border-radius: var(--radius-md);
             color: white;
-            font-size: 24px;
+            font-size: 20px;
             font-weight: 700;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             box-shadow: var(--shadow-md);
         }
 
         .heading h1 {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: 700;
             color: var(--text-primary);
             margin-bottom: 4px;
@@ -78,7 +79,7 @@
         }
 
         .heading p {
-            font-size: 14px;
+            font-size: 13px;
             color: var(--text-secondary);
         }
 
@@ -87,14 +88,13 @@
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius-lg);
-            padding: 24px;
+            padding: 18px;
             box-shadow: var(--shadow-md);
-            flex: 1;
         }
 
         /* Sections */
         .section {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
 
         .section:last-child {
@@ -360,6 +360,106 @@
             margin-top: 16px;
         }
 
+        /* CV List */
+        #cv-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #cv-list:empty::before {
+            content: "Aucun CV téléchargé";
+            display: block;
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 12px;
+            padding: 16px;
+            background: var(--surface-secondary);
+            border-radius: var(--radius-md);
+        }
+
+        .cv-item {
+            position: relative;
+            background: var(--surface-secondary);
+            border: 2px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cv-item:hover {
+            border-color: var(--primary-light);
+            background: var(--surface);
+        }
+
+        .cv-item.selected {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .cv-info {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .cv-radio {
+            margin-top: 2px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .cv-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .cv-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cv-meta {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            display: flex;
+            gap: 8px;
+        }
+
+        .cv-delete {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 22px;
+            height: 22px;
+            border: none;
+            background: transparent;
+            color: var(--text-tertiary);
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1;
+            cursor: pointer;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            padding: 0;
+        }
+
+        .cv-delete:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+        }
+
         /* Responsive */
         @media (max-width: 480px) {
             .container {
@@ -407,17 +507,17 @@
                 <div class="section">
                     <div class="section-title">
                         <span>📄</span>
-                        Importez votre CV
+                        Mes CV
                     </div>
                     <div class="file-input-wrapper">
                         <input type="file" id="cv-file" accept=".pdf">
                         <label for="cv-file" class="file-input-label">
                             <span>📎</span>
-                            <div>Glissez-déposez votre PDF ici</div>
-                            <div style="font-size: 12px; color: var(--text-tertiary);">ou cliquez pour sélectionner</div>
+                            <div>Ajouter un CV (PDF)</div>
+                            <div style="font-size: 12px; color: var(--text-tertiary);">Glissez-déposez ou cliquez</div>
                         </label>
                     </div>
-                    <div id="file-name" class="file-name"></div>
+                    <div id="cv-list" style="margin-top: 12px;"></div>
                 </div>
 
                 <!-- Section 3: Settings -->
@@ -445,11 +545,13 @@
                     </div>
                 </div>
 
-                <!-- Action Buttons -->
-                <button id="generate-btn" class="btn btn-primary mt-md">
-                    <span>✨</span>
-                    Générer ma lettre
-                </button>
+                <!-- Action Button unique : génère (hardcoded) puis insère -->
+                <div style="margin-top: 12px;">
+                    <button id="insert-btn" class="btn btn-primary">
+                        <span>✨</span>
+                        Générer et insérer ma lettre
+                    </button>
+                </div>
 
                 <!-- Loading State -->
                 <div id="loading" class="loading">

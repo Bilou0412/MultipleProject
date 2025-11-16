@@ -1,27 +1,26 @@
-// Configuration de l'API
 const API_URL = 'http://localhost:8000';
 
-// Éléments DOM
 const jobUrlDisplay = document.getElementById('job-url');
 const cvFileInput = document.getElementById('cv-file');
-const fileNameDisplay = document.getElementById('file-name');
+const cvListContainer = document.getElementById('cv-list');
 const llmSelect = document.getElementById('llm-select');
 const pdfSelect = document.getElementById('pdf-select');
-const generateBtn = document.getElementById('generate-btn');
+const insertBtn = document.getElementById('insert-btn');
 const statusDiv = document.getElementById('status');
 const loadingDiv = document.getElementById('loading');
 const mainContent = document.getElementById('main-content');
 const noUrlMessage = document.getElementById('no-url-message');
 
 let currentUrl = '';
-let cvId = null;
-const clearCvBtn = document.getElementById('clear-cv-btn');
+let selectedCvId = null;
 
-// 🔥 Réception de l'URL envoyée par popup.js
-chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "JOB_URL") {
-        const url = message.url;
+document.addEventListener('DOMContentLoaded', async () => {
+    loadPreferences();
+    loadCvList();
 
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const url = tabs[0]?.url || '';
+        
         if (url && isJobOfferUrl(url)) {
             jobUrlDisplay.textContent = url;
             mainContent.style.display = "block";
@@ -32,38 +31,19 @@ chrome.runtime.onMessage.addListener((message) => {
             mainContent.style.display = "none";
             noUrlMessage.style.display = "block";
         }
-    }
-});
+    });
 
-// 🔥 NE PAS récupérer l’URL via chrome.tabs.query → interdit
-document.addEventListener('DOMContentLoaded', async () => {
-    loadPreferences();
-
-    // 🔥 Récupérer le CV sauvegardé
-    chrome.storage.local.get(['savedCvId'], (result) => {
-        if (result.savedCvId) {
-            cvId = result.savedCvId;
-
-            fileNameDisplay.textContent = "📄 CV déjà uploadé";
-            // Afficher le bouton de suppression lorsque un CV est présent
-            if (clearCvBtn) {
-                clearCvBtn.style.display = 'block';
-            }
+    chrome.storage.local.get(['selectedCvId'], (result) => {
+        if (result.selectedCvId) {
+            selectedCvId = result.selectedCvId;
         }
     });
 });
 
-// Vérifier si l'URL est une offre d'emploi
 function isJobOfferUrl(url) {
-    const jobPatterns = [
-        /welcometothejungle\.com\/.*\/jobs\/.*/,
-        /linkedin\.com\/jobs\/.*/,
-        /indeed\.fr\/.*\/viewjob.*/
-    ];
-    return jobPatterns.some(pattern => pattern.test(url));
+    return /welcometothejungle\.com\/.*\/jobs\/.*|linkedin\.com\/jobs\/.*|indeed\.fr\/.*\/viewjob.*/.test(url);
 }
 
-// Upload du CV
 cvFileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -73,7 +53,6 @@ cvFileInput.addEventListener('change', async (e) => {
         return;
     }
 
-    fileNameDisplay.textContent = `✅ ${file.name}`;
     showStatus('info', 'Upload du CV en cours...');
 
     try {
@@ -88,21 +67,112 @@ cvFileInput.addEventListener('change', async (e) => {
         const data = await response.json();
 
         if (response.ok) {
-            cvId = data.cv_id;
-            chrome.storage.local.set({ savedCvId: cvId });
+            selectedCvId = data.cv_id;
+            chrome.storage.local.set({ selectedCvId: data.cv_id });
             showStatus('success', 'CV uploadé avec succès !');
+            await loadCvList();
             setTimeout(() => hideStatus(), 2000);
         } else {
             showStatus('error', data.detail);
-            cvId = null;
         }
     } catch (error) {
         showStatus('error', error.message);
-        cvId = null;
     }
+    cvFileInput.value = '';
 });
 
-// Sauvegarde des préférences
+async function loadCvList() {
+    try {
+        const response = await fetch(`${API_URL}/list-cvs`);
+        const data = await response.json();
+        
+        if (!response.ok || !data.cvs) {
+            cvListContainer.innerHTML = '<p style="color: #6b7280; font-size: 13px; text-align: center;">Aucun CV disponible</p>';
+            return;
+        }
+
+        if (data.cvs.length === 0) {
+            cvListContainer.innerHTML = '<p style="color: #6b7280; font-size: 13px; text-align: center;">Aucun CV uploadé</p>';
+            return;
+        }
+
+        cvListContainer.innerHTML = data.cvs.map(cv => `
+            <div class="cv-item ${cv.cv_id === selectedCvId ? 'selected' : ''}" data-cv-id="${cv.cv_id}">
+                <div class="cv-info">
+                    <input type="radio" name="cv-select" value="${cv.cv_id}" ${cv.cv_id === selectedCvId ? 'checked' : ''}>
+                    <div class="cv-details">
+                        <div class="cv-name">${cv.filename}</div>
+                        <div class="cv-meta">${formatFileSize(cv.file_size)} • ${formatDate(cv.upload_date)}</div>
+                    </div>
+                </div>
+                <button class="cv-delete" data-cv-id="${cv.cv_id}" title="Supprimer">✕</button>
+            </div>
+        `).join('');
+
+        cvListContainer.querySelectorAll('input[name="cv-select"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                selectedCvId = e.target.value;
+                chrome.storage.local.set({ selectedCvId });
+                loadCvList();
+            });
+        });
+
+        cvListContainer.querySelectorAll('.cv-delete').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const cvId = e.target.dataset.cvId;
+                if (confirm('Supprimer définitivement ce CV ?')) {
+                    await deleteCv(cvId);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Erreur chargement CVs:', error);
+        cvListContainer.innerHTML = '<p style="color: #ef4444; font-size: 13px;">Erreur de chargement</p>';
+    }
+}
+
+async function deleteCv(cvId) {
+    try {
+        const response = await fetch(`${API_URL}/cleanup/${cvId}`, { method: 'DELETE' });
+        if (response.ok) {
+            if (selectedCvId === cvId) {
+                selectedCvId = null;
+                chrome.storage.local.remove(['selectedCvId']);
+            }
+            showStatus('success', 'CV supprimé');
+            await loadCvList();
+            setTimeout(() => hideStatus(), 2000);
+        } else {
+            const data = await response.json().catch(() => ({}));
+            showStatus('error', data.detail || 'Erreur lors de la suppression');
+        }
+    } catch (error) {
+        showStatus('error', error.message);
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatDate(isoDate) {
+    const date = new Date(isoDate);
+    const now = new Date();
+    const diff = now - date;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (minutes < 1) return 'À l\'instant';
+    if (minutes < 60) return `Il y a ${minutes}min`;
+    if (hours < 24) return `Il y a ${hours}h`;
+    if (days < 7) return `Il y a ${days}j`;
+    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+
 llmSelect.addEventListener('change', savePreferences);
 pdfSelect.addEventListener('change', savePreferences);
 
@@ -120,98 +190,82 @@ function loadPreferences() {
     });
 }
 
-// Génération de la lettre
-generateBtn.addEventListener('click', async () => {
-    if (!cvId) {
-        showStatus('error', 'Veuillez uploader votre CV');
-        return;
-    }
+if (insertBtn) {
+    insertBtn.addEventListener('click', async () => {
+        if (!currentUrl) {
+            showStatus('error', 'Aucune URL d\'offre détectée.');
+            return;
+        }
 
-    if (!currentUrl) {
-        showStatus('error', 'URL de l\'offre non détectée');
-        return;
-    }
+        if (!selectedCvId) {
+            showStatus('error', 'Veuillez sélectionner un CV.');
+            return;
+        }
 
-    generateBtn.disabled = true;
-    loadingDiv.style.display = 'block';
-    hideStatus();
+        insertBtn.disabled = true;
+        loadingDiv.style.display = 'block';
+        hideStatus();
 
-    try {
-        const formData = new FormData();
-        formData.append('cv_id', cvId);
-        formData.append('job_url', currentUrl);
-        formData.append('llm_provider', llmSelect.value);
-        formData.append('pdf_generator', pdfSelect.value);
+        try {
+            const form = new FormData();
+            form.append('cv_id', selectedCvId);
+            form.append('job_url', currentUrl);
+            form.append('llm_provider', llmSelect.value || 'openai');
+            form.append('pdf_generator', pdfSelect.value || 'fpdf');
 
-        const response = await fetch(`${API_URL}/generate-cover-letter`, {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showStatus('success', 'Lettre générée !');
-
-            chrome.tabs.create({
-                url: `${API_URL}/download/${data.file_id}`
+            const response = await fetch(`${API_URL}/generate-cover-letter`, {
+                method: 'POST',
+                body: form
             });
-            // NOTE: ne plus nettoyer automatiquement le CV après génération.
-            // L'utilisateur peut supprimer son CV explicitement via le bouton "Supprimer le CV".
-        } else {
-            showStatus('error', data.detail);
-        }
-    } catch (error) {
-        showStatus('error', error.message);
-    } finally {
-        generateBtn.disabled = false;
-        loadingDiv.style.display = 'none';
-    }
-});
 
-// Nettoyage
-async function cleanupFiles() {
-    if (!cvId) return;
-    try {
-        const response = await fetch(`${API_URL}/cleanup/${cvId}`, { method: 'DELETE' });
-        if (response.ok) {
-            // Supprimer l'ID stocké côté extension
-            chrome.storage.local.remove(['savedCvId'], () => {});
-            cvId = null;
-            fileNameDisplay.textContent = '';
-            if (clearCvBtn) clearCvBtn.style.display = 'none';
-            showStatus('success', 'CV supprimé du serveur');
-        } else {
-            try {
-                const data = await response.json();
-                showStatus('error', data.detail || 'Erreur lors du nettoyage');
-            } catch (e) {
-                showStatus('error', 'Erreur lors du nettoyage');
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || `Erreur serveur ${response.status}`);
             }
-        }
-    } catch (error) {
-        console.error(error);
-        showStatus('error', error.message);
-    }
-}
 
-// Gestion du bouton "Supprimer le CV"
-if (clearCvBtn) {
-    clearCvBtn.addEventListener('click', async () => {
-        // Confirmer l'action
-        const confirmDelete = confirm('Supprimer définitivement le CV du serveur ?');
-        if (!confirmDelete) return;
-        await cleanupFiles();
+            const data = await response.json();
+            const generated = data && data.letter_text;
+
+            if (generated) {
+                chrome.storage.local.set({ lastGeneratedLetter: generated, lastGeneratedUrl: currentUrl });
+            }
+
+            const downloadUrl = (data.download_url && data.download_url.startsWith('http')) 
+                ? data.download_url 
+                : `${API_URL}${data.download_url}`;
+
+            if (chrome.downloads && chrome.downloads.download) {
+                chrome.downloads.download({
+                    url: downloadUrl,
+                    filename: `lettre_${data.file_id}.pdf`,
+                    conflictAction: 'overwrite'
+                }, (downloadId) => {
+                    if (chrome.runtime.lastError) {
+                        chrome.tabs.create({ url: downloadUrl });
+                        showStatus('info', 'Génération terminée — ouverture du PDF');
+                    } else {
+                        showStatus('success', 'Lettre générée et téléchargement lancé !');
+                    }
+                });
+            } else {
+                chrome.tabs.create({ url: downloadUrl });
+                showStatus('success', 'Lettre générée — ouverture du PDF');
+            }
+        } catch (error) {
+            showStatus('error', error.message || 'Erreur lors de la génération');
+        } finally {
+            insertBtn.disabled = false;
+            loadingDiv.style.display = 'none';
+        }
     });
 }
 
 function showStatus(type, message) {
     statusDiv.className = `status ${type}`;
     statusDiv.textContent = message;
+    statusDiv.style.display = 'block';
 }
 
 function hideStatus() {
     statusDiv.style.display = 'none';
 }
-
-

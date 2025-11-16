@@ -6,15 +6,17 @@
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "downloads"
   ],
   "host_permissions": [
     "https://www.welcometothejungle.com/*",
     "https://www.linkedin.com/*",
-    "https://www.indeed.fr/*"
+    "https://www.indeed.fr/*",
+    "http://localhost:8000/*"
   ],
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "generator.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
