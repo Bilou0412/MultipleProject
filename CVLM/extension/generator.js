@@ -1,89 +1,210 @@
 const API_URL = 'http://localhost:8000';
 
+// Auth Elements
+const authSection = document.getElementById('auth-section');
+const mainApp = document.getElementById('main-app');
+const googleSigninBtn = document.getElementById('google-signin-btn');
+const signoutBtn = document.getElementById('signout-btn');
+const userAvatar = document.getElementById('user-avatar');
+const userName = document.getElementById('user-name');
+const userEmail = document.getElementById('user-email');
+
+// UI Elements
 const jobUrlDisplay = document.getElementById('job-url');
 const cvFileInput = document.getElementById('cv-file');
 const cvListContainer = document.getElementById('cv-list');
-const llmSelect = document.getElementById('llm-select');
-const pdfSelect = document.getElementById('pdf-select');
 const insertBtn = document.getElementById('insert-btn');
-const statusDiv = document.getElementById('status');
 const loadingDiv = document.getElementById('loading');
-const mainContent = document.getElementById('main-content');
+const statusDiv = document.getElementById('status');
 const noUrlMessage = document.getElementById('no-url-message');
+const mainContent = document.getElementById('main-content');
+const pdfSelect = document.getElementById('pdf-select');
 
 let currentUrl = '';
 let selectedCvId = null;
+let authToken = null;
+let currentUser = null;
 
-document.addEventListener('DOMContentLoaded', async () => {
-    loadPreferences();
-    loadCvList();
+// === Authentification Google ===
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const url = tabs[0]?.url || '';
+async function initAuth() {
+    const stored = await chrome.storage.local.get(['authToken', 'userProfile']);
+    
+    if (stored.authToken && stored.userProfile) {
+        authToken = stored.authToken;
+        currentUser = stored.userProfile;
+        showMainApp();
+    } else {
+        showAuthSection();
+    }
+}
+
+function showAuthSection() {
+    authSection.style.display = 'block';
+    mainApp.style.display = 'none';
+}
+
+function showMainApp() {
+    authSection.style.display = 'none';
+    mainApp.style.display = 'block';
+    
+    // Afficher le profil utilisateur
+    if (currentUser) {
+        userName.textContent = currentUser.name || 'Utilisateur';
+        userEmail.textContent = currentUser.email || '';
+        userAvatar.src = currentUser.picture || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Cpath fill="%232563eb" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/%3E%3C/svg%3E';
+    }
+    
+    // Charger le reste de l'interface
+    init();
+}
+
+googleSigninBtn.addEventListener('click', async () => {
+    try {
+        googleSigninBtn.disabled = true;
+        googleSigninBtn.innerHTML = '<span>⏳</span> Connexion...';
         
-        if (url && isJobOfferUrl(url)) {
-            jobUrlDisplay.textContent = url;
-            mainContent.style.display = "block";
-            noUrlMessage.style.display = "none";
-            currentUrl = url;
-        } else {
-            jobUrlDisplay.textContent = "Aucune URL détectée";
-            mainContent.style.display = "none";
-            noUrlMessage.style.display = "block";
+        // Obtenir le token Google via chrome.identity
+        const token = await new Promise((resolve, reject) => {
+            chrome.identity.getAuthToken({ interactive: true }, (token) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(token);
+                }
+            });
+        });
+        
+        // Envoyer le token à notre backend pour validation et JWT
+        const response = await fetch(`${API_URL}/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ google_token: token })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Erreur d\'authentification');
         }
-    });
-
-    chrome.storage.local.get(['selectedCvId'], (result) => {
-        if (result.selectedCvId) {
-            selectedCvId = result.selectedCvId;
-        }
-    });
+        
+        const data = await response.json();
+        
+        // Stocker le token JWT et le profil
+        authToken = data.access_token;
+        currentUser = data.user;
+        
+        await chrome.storage.local.set({
+            authToken: authToken,
+            userProfile: currentUser
+        });
+        
+        showMainApp();
+    } catch (error) {
+        console.error('Erreur authentification:', error);
+        alert('Erreur de connexion: ' + error.message);
+        googleSigninBtn.disabled = false;
+        googleSigninBtn.innerHTML = '<span>🔑</span> Se connecter avec Google';
+    }
 });
 
-function isJobOfferUrl(url) {
-    return /welcometothejungle\.com\/.*\/jobs\/.*|linkedin\.com\/jobs\/.*|indeed\.fr\/.*\/viewjob.*/.test(url);
+signoutBtn.addEventListener('click', async () => {
+    // Révoquer le token Google
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (token) {
+            chrome.identity.removeCachedAuthToken({ token }, () => {
+                console.log('✅ Token Google révoqué');
+            });
+        }
+    });
+    
+    // Nettoyer le storage
+    await chrome.storage.local.remove(['authToken', 'userProfile', 'selectedCvId']);
+    
+    authToken = null;
+    currentUser = null;
+    selectedCvId = null;
+    
+    showAuthSection();
+});
+
+// === Initialisation principale ===
+
+async function init() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]?.url) {
+            currentUrl = tabs[0].url;
+            const isJobPage = /welcometothejungle\.com\/.*\/jobs\/.*|linkedin\.com\/jobs\/.*|indeed\.fr\/.*\/viewjob.*/.test(currentUrl);
+            
+            if (isJobPage) {
+                jobUrlDisplay.textContent = currentUrl;
+                mainContent.style.display = 'block';
+                noUrlMessage.style.display = 'none';
+            } else {
+                mainContent.style.display = 'none';
+                noUrlMessage.style.display = 'flex';
+            }
+        }
+    });
+    
+    chrome.storage.local.get(['selectedCvId'], (result) => {
+        selectedCvId = result.selectedCvId || null;
+    });
+    
+    loadPreferences();
+    await loadCvList();
 }
+
+// === Upload CV ===
 
 cvFileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.pdf')) {
-        showStatus('error', 'Le CV doit être un fichier PDF');
+    if (!file.type.includes('pdf')) {
+        showStatus('error', 'Le fichier doit être un PDF.');
         return;
     }
 
-    showStatus('info', 'Upload du CV en cours...');
+    const formData = new FormData();
+    formData.append('cv_file', file);
 
     try {
-        const formData = new FormData();
-        formData.append('cv_file', file);
-
+        showStatus('info', 'Upload en cours...');
+        
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        
         const response = await fetch(`${API_URL}/upload-cv`, {
             method: 'POST',
+            headers,
             body: formData
         });
 
-        const data = await response.json();
-
-        if (response.ok) {
-            selectedCvId = data.cv_id;
-            chrome.storage.local.set({ selectedCvId: data.cv_id });
-            showStatus('success', 'CV uploadé avec succès !');
-            await loadCvList();
-            setTimeout(() => hideStatus(), 2000);
-        } else {
-            showStatus('error', data.detail);
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || `Erreur ${response.status}`);
         }
+
+        const data = await response.json();
+        selectedCvId = data.cv_id;
+        chrome.storage.local.set({ selectedCvId });
+
+        showStatus('success', `✅ ${file.name} uploadé !`);
+        setTimeout(() => hideStatus(), 2000);
+        
+        await loadCvList();
     } catch (error) {
-        showStatus('error', error.message);
+        showStatus('error', `❌ Erreur upload: ${error.message}`);
     }
     cvFileInput.value = '';
 });
 
+// === Liste des CVs ===
+
 async function loadCvList() {
     try {
-        const response = await fetch(`${API_URL}/list-cvs`);
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        
+        const response = await fetch(`${API_URL}/list-cvs`, { headers });
         const data = await response.json();
         
         if (!response.ok || !data.cvs) {
@@ -134,7 +255,13 @@ async function loadCvList() {
 
 async function deleteCv(cvId) {
     try {
-        const response = await fetch(`${API_URL}/cleanup/${cvId}`, { method: 'DELETE' });
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        
+        const response = await fetch(`${API_URL}/cleanup/${cvId}`, { 
+            method: 'DELETE',
+            headers
+        });
+        
         if (response.ok) {
             if (selectedCvId === cvId) {
                 selectedCvId = null;
@@ -152,43 +279,7 @@ async function deleteCv(cvId) {
     }
 }
 
-function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-function formatDate(isoDate) {
-    const date = new Date(isoDate);
-    const now = new Date();
-    const diff = now - date;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    
-    if (minutes < 1) return 'À l\'instant';
-    if (minutes < 60) return `Il y a ${minutes}min`;
-    if (hours < 24) return `Il y a ${hours}h`;
-    if (days < 7) return `Il y a ${days}j`;
-    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-}
-
-llmSelect.addEventListener('change', savePreferences);
-pdfSelect.addEventListener('change', savePreferences);
-
-function savePreferences() {
-    chrome.storage.local.set({
-        llmProvider: llmSelect.value,
-        pdfGenerator: pdfSelect.value
-    });
-}
-
-function loadPreferences() {
-    chrome.storage.local.get(['llmProvider', 'pdfGenerator'], (result) => {
-        if (result.llmProvider) llmSelect.value = result.llmProvider;
-        if (result.pdfGenerator) pdfSelect.value = result.pdfGenerator;
-    });
-}
+// === Génération de lettre ===
 
 if (insertBtn) {
     insertBtn.addEventListener('click', async () => {
@@ -210,11 +301,14 @@ if (insertBtn) {
             const form = new FormData();
             form.append('cv_id', selectedCvId);
             form.append('job_url', currentUrl);
-            form.append('llm_provider', llmSelect.value || 'openai');
+            form.append('llm_provider', 'openai'); // Hardcodé OpenAI
             form.append('pdf_generator', pdfSelect.value || 'fpdf');
+
+            const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
 
             const response = await fetch(`${API_URL}/generate-cover-letter`, {
                 method: 'POST',
+                headers,
                 body: form
             });
 
@@ -260,6 +354,43 @@ if (insertBtn) {
     });
 }
 
+// === Utilitaires ===
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatDate(isoDate) {
+    const date = new Date(isoDate);
+    const now = new Date();
+    const diff = now - date;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (minutes < 1) return 'À l\'instant';
+    if (minutes < 60) return `Il y a ${minutes}min`;
+    if (hours < 24) return `Il y a ${hours}h`;
+    if (days < 7) return `Il y a ${days}j`;
+    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+
+function savePreferences() {
+    chrome.storage.local.set({
+        pdfGenerator: pdfSelect.value
+    });
+}
+
+function loadPreferences() {
+    chrome.storage.local.get(['pdfGenerator'], (result) => {
+        if (result.pdfGenerator) pdfSelect.value = result.pdfGenerator;
+    });
+}
+
+pdfSelect.addEventListener('change', savePreferences);
+
 function showStatus(type, message) {
     statusDiv.className = `status ${type}`;
     statusDiv.textContent = message;
@@ -269,3 +400,7 @@ function showStatus(type, message) {
 function hideStatus() {
     statusDiv.style.display = 'none';
 }
+
+// === Démarrage ===
+
+document.addEventListener('DOMContentLoaded', initAuth);

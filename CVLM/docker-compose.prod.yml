@@ -1,0 +1,76 @@
+
+# Override pour la production
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_production}
+    volumes:
+      - /var/lib/postgresql/cvlm_data:/var/lib/postgresql/data  # Volume persistant système
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+
+  api:
+    restart: always
+    command: uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 4 --log-level info
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-cvlm_user}:${DB_PASSWORD:-cvlm_password}@postgres:5432/${DB_NAME:-cvlm_db}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - JWT_SECRET=${JWT_SECRET}
+      - FILE_STORAGE_BASE_PATH=/app/data/files
+    volumes:
+      - /var/lib/cvlm/files:/app/data/files  # Volume persistant système
+      - /var/log/cvlm:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  streamlit:
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-cvlm_user}:${DB_PASSWORD:-cvlm_password}@postgres:5432/${DB_NAME:-cvlm_db}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - FILE_STORAGE_BASE_PATH=/app/data/files
+    volumes:
+      - /var/lib/cvlm/files:/app/data/files
+      - /var/log/cvlm:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Nginx reverse proxy (optionnel)
+  nginx:
+    image: nginx:alpine
+    container_name: cvlm_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - api
+      - streamlit
+    networks:
+      - cvlm_network

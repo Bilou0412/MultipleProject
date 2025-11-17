@@ -116,9 +116,17 @@ function addInsertButton(textarea, index) {
                 text_type: 'why_join'
             };
 
+            // Récupérer le token JWT depuis le storage
+            const storage = await chrome.storage.local.get(['authToken']);
+            const headers = { 'Content-Type': 'application/json' };
+            
+            if (storage.authToken) {
+                headers['Authorization'] = `Bearer ${storage.authToken}`;
+            }
+
             const resp = await fetch(`${API_URL}/generate-text`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify(payload)
             });
 

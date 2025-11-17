@@ -1,0 +1,47 @@
+# Ignorer les données Docker
+docker-compose.override.yml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Environment
+.env
+.env.local
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+logs/
+*.log
+
+# Volumes Docker
+postgres_data/
+pgadmin_data/
+
+# Documentation
+*.md
+!README.md
+!DOCKER_README.md
+
+# Git
+.git/
+.gitignore

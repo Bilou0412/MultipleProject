@@ -478,62 +478,93 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <div class="logo">✦</div>
-            <div class="heading">
-                <h1>CVLM</h1>
-                <p>Générateur de Lettres de Motivation</p>
+        <!-- Auth Section (visible si non connecté) -->
+        <div id="auth-section" style="display: none;">
+            <div class="header">
+                <div class="logo">✦</div>
+                <div class="heading">
+                    <h1>CVLM</h1>
+                    <p>Générateur de Lettres de Motivation</p>
+                </div>
+            </div>
+            <div class="card">
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🔐</div>
+                    <h2 style="font-size: 18px; margin-bottom: 8px; color: var(--text-primary);">Connexion requise</h2>
+                    <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px;">
+                        Connectez-vous avec votre compte Google pour accéder à vos CV et lettres de motivation.
+                    </p>
+                    <button id="google-signin-btn" class="btn btn-primary">
+                        <span>🔑</span>
+                        Se connecter avec Google
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div class="card">
-            <div id="no-url-message" class="no-url" style="display: none;">
-                <div class="no-url-icon">📍</div>
-                <p>Ouvrez une annonce d'emploi sur <strong>LinkedIn, Welcome to the Jungle</strong> ou <strong>Indeed</strong> pour commencer.</p>
+        <!-- Main Content (visible si connecté) -->
+        <div id="main-app" style="display: none;">
+            <div class="header">
+                <div class="logo">✦</div>
+                <div class="heading">
+                    <h1>CVLM</h1>
+                    <p>Générateur de Lettres de Motivation</p>
+                </div>
             </div>
 
-            <div id="main-content">
-                <!-- Section 1: URL -->
-                <div class="section">
-                    <div class="section-title">
-                        <span>🔗</span>
-                        Offre d'emploi détectée
+            <!-- User Profile Bar -->
+            <div style="background: var(--surface); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; box-shadow: var(--shadow-sm);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img id="user-avatar" src="" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--primary);">
+                    <div>
+                        <div id="user-name" style="font-size: 13px; font-weight: 600; color: var(--text-primary);"></div>
+                        <div id="user-email" style="font-size: 11px; color: var(--text-tertiary);"></div>
                     </div>
-                    <div id="job-url" class="url-display">Chargement...</div>
-                    <div class="hint">💡 Conseil : Ouvrez CVLM directement depuis la page de l'offre.</div>
+                </div>
+                <button id="signout-btn" style="background: transparent; border: 1px solid var(--border); color: var(--text-secondary); padding: 6px 12px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; transition: all 0.2s;">
+                    Déconnexion
+                </button>
+            </div>
+
+            <div class="card">
+                <div id="no-url-message" class="no-url" style="display: none;">
+                    <div class="no-url-icon">📍</div>
+                    <p>Ouvrez une annonce d'emploi sur <strong>LinkedIn, Welcome to the Jungle</strong> ou <strong>Indeed</strong> pour commencer.</p>
                 </div>
 
-                <!-- Section 2: CV Upload -->
-                <div class="section">
-                    <div class="section-title">
-                        <span>📄</span>
-                        Mes CV
+                <div id="main-content">
+                    <!-- Section 1: URL -->
+                    <div class="section">
+                        <div class="section-title">
+                            <span>🔗</span>
+                            Offre d'emploi détectée
+                        </div>
+                        <div id="job-url" class="url-display">Chargement...</div>
+                        <div class="hint">💡 Conseil : Ouvrez CVLM directement depuis la page de l'offre.</div>
                     </div>
-                    <div class="file-input-wrapper">
-                        <input type="file" id="cv-file" accept=".pdf">
-                        <label for="cv-file" class="file-input-label">
-                            <span>📎</span>
-                            <div>Ajouter un CV (PDF)</div>
-                            <div style="font-size: 12px; color: var(--text-tertiary);">Glissez-déposez ou cliquez</div>
-                        </label>
-                    </div>
-                    <div id="cv-list" style="margin-top: 12px;"></div>
-                </div>
 
-                <!-- Section 3: Settings -->
-                <div class="section">
-                    <div class="section-title">
-                        <span>⚙️</span>
-                        Paramètres
+                    <!-- Section 2: CV Upload -->
+                    <div class="section">
+                        <div class="section-title">
+                            <span>📄</span>
+                            Mes CV
+                        </div>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="cv-file" accept=".pdf">
+                            <label for="cv-file" class="file-input-label">
+                                <span>📎</span>
+                                <div>Ajouter un CV (PDF)</div>
+                                <div style="font-size: 12px; color: var(--text-tertiary);">Glissez-déposez ou cliquez</div>
+                            </label>
+                        </div>
+                        <div id="cv-list" style="margin-top: 12px;"></div>
                     </div>
-                    <div class="row">
-                        <div>
-                            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Service IA</label>
-                            <select id="llm-select">
-                                <option value="openai">OpenAI (GPT-4)</option>
-                                <option value="gemini">Google Gemini</option>
-                                <option value="claude">Claude 3 Opus</option>
-                            </select>
+
+                    <!-- Section 3: Settings (PDF seulement) -->
+                    <div class="section">
+                        <div class="section-title">
+                            <span>⚙️</span>
+                            Paramètres
                         </div>
                         <div>
                             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Format PDF</label>
@@ -543,24 +574,24 @@
                             </select>
                         </div>
                     </div>
-                </div>
 
-                <!-- Action Button unique : génère (hardcoded) puis insère -->
-                <div style="margin-top: 12px;">
-                    <button id="insert-btn" class="btn btn-primary">
-                        <span>✨</span>
-                        Générer et insérer ma lettre
-                    </button>
-                </div>
+                    <!-- Action Button : génère et télécharge le PDF -->
+                    <div style="margin-top: 12px;">
+                        <button id="insert-btn" class="btn btn-primary">
+                            <span>✨</span>
+                            Générer et télécharger la lettre
+                        </button>
+                    </div>
 
-                <!-- Loading State -->
-                <div id="loading" class="loading">
-                    <div class="spinner"></div>
-                    <p class="hint">Génération en cours... Veuillez patienter</p>
-                </div>
+                    <!-- Loading State -->
+                    <div id="loading" class="loading">
+                        <div class="spinner"></div>
+                        <p class="hint">Génération en cours... Veuillez patienter</p>
+                    </div>
 
-                <!-- Status Messages -->
-                <div id="status" class="status"></div>
+                    <!-- Status Messages -->
+                    <div id="status" class="status"></div>
+                </div>
             </div>
         </div>
     </div>

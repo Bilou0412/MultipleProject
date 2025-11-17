@@ -7,7 +7,8 @@
     "activeTab",
     "storage",
     "scripting",
-    "downloads"
+    "downloads",
+    "identity"
   ],
   "host_permissions": [
     "https://www.welcometothejungle.com/*",
@@ -15,6 +16,13 @@
     "https://www.indeed.fr/*",
     "http://localhost:8000/*"
   ],
+  "oauth2": {
+    "client_id": "825312610018-cjaamh6gf8882lut9t082jhjv9g4l0bo.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
   "action": {
     "default_popup": "generator.html",
     "default_icon": {

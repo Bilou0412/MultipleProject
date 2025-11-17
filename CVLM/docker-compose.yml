@@ -1,0 +1,102 @@
+
+services:
+  # Base de données PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: cvlm_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cvlm_db
+      POSTGRES_USER: cvlm_user
+      POSTGRES_PASSWORD: cvlm_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - cvlm_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cvlm_user -d cvlm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API FastAPI
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cvlm_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://cvlm_user:cvlm_password@postgres:5432/cvlm_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - FILE_STORAGE_BASE_PATH=/app/data/files
+    volumes:
+      - ./data/files:/app/data/files
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cvlm_network
+    command: uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload
+
+  # Interface Streamlit (optionnel)
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: cvlm_streamlit
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - DATABASE_URL=postgresql://cvlm_user:cvlm_password@postgres:5432/cvlm_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - FILE_STORAGE_BASE_PATH=/app/data/files
+    volumes:
+      - ./data/files:/app/data/files
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cvlm_network
+    command: streamlit run streamlit_app.py --server.address=0.0.0.0
+
+  # PgAdmin (optionnel - pour l'administration de la DB)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cvlm_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@cvlm.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - cvlm_network
+    profiles:
+      - dev  # Démarrer uniquement en dev avec: docker-compose --profile dev up
+
+networks:
+  cvlm_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
