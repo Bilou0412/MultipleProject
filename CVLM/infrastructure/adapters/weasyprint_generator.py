@@ -3,7 +3,7 @@ from domain.ports.pdf_generator import PdfGenerator, Document
 from weasyprint import HTML
 
 
-class WeasyPrintGgenerator(PdfGenerator):
+class WeasyPrintGenerator(PdfGenerator):
     def create_pdf(self, document: Document, output_path: str) -> str:
         # Créer du HTML simple avec le texte
         html_content = f"""

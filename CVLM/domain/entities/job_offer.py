@@ -1,4 +1,9 @@
-from domain.entities.document import Document
+from dataclasses import dataclass
 
-class JobOffer(Document):
-    pass
+
+@dataclass
+class JobOffer:
+    """
+    Représente une offre d'emploi avec son contenu textuel
+    """
+    raw_text: str = ""

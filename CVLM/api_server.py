@@ -18,12 +18,12 @@ from domain.use_cases.analyze_cv_and_offer import AnalyseCvOffer
 from domain.entities.user import User
 from domain.entities.cv import Cv
 
-from infrastructure.adapters.pypdf_parse import Pypdf_parser
-from infrastructure.adapters.Google_gemini_api import LlmGemini
-from infrastructure.adapters.fpdf_generator import Fpdf_generator
+from infrastructure.adapters.pypdf_parse import PyPdfParser
+from infrastructure.adapters.google_gemini_api import GoogleGeminiLlm
+from infrastructure.adapters.fpdf_generator import FpdfGenerator
 from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
-from infrastructure.adapters.open_ai_api import LlmOpenAI
-from infrastructure.adapters.weasyprint_generator import WeasyPrintGgenerator
+from infrastructure.adapters.open_ai_api import OpenAiLlm
+from infrastructure.adapters.weasyprint_generator import WeasyPrintGenerator
 from infrastructure.adapters.database_config import get_db, init_database
 from infrastructure.adapters.postgres_user_repository import PostgresUserRepository
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
@@ -251,7 +251,7 @@ async def upload_cv(
     
     try:
         cv_repo = PostgresCvRepository(db)
-        document_parser = Pypdf_parser()
+        document_parser = PyPdfParser()
         
         content = await cv_file.read()
         cv_id = str(uuid.uuid4())
@@ -365,10 +365,10 @@ async def generate_cover_letter(
             raise HTTPException(status_code=404, detail="Fichier CV introuvable")
         
         # Services LLM et PDF
-        document_parser = Pypdf_parser()
+        document_parser = PyPdfParser()
         job_fetcher = WelcomeToTheJungleFetcher()
-        llm = LlmGemini() if llm_provider.lower() == "gemini" else LlmOpenAI()
-        pdf_gen = WeasyPrintGgenerator() if pdf_generator.lower() == "weasyprint" else Fpdf_generator()
+        llm = GoogleGeminiLlm() if llm_provider.lower() == "gemini" else OpenAiLlm()
+        pdf_gen = WeasyPrintGenerator() if pdf_generator.lower() == "weasyprint" else FpdfGenerator()
         
         use_case = AnalyseCvOffer(
             job_offer_fetcher=job_fetcher,
@@ -440,9 +440,9 @@ async def generate_text(
         if not cv_path.exists():
             raise HTTPException(status_code=404, detail="Fichier CV introuvable.")
 
-        document_parser = Pypdf_parser()
+        document_parser = PyPdfParser()
         job_fetcher = WelcomeToTheJungleFetcher()
-        llm = LlmGemini() if request.llm_provider.lower() == "gemini" else LlmOpenAI()
+        llm = GoogleGeminiLlm() if request.llm_provider.lower() == "gemini" else OpenAiLlm()
         
         cv_text = document_parser.parse_document(input_path=str(cv_path))
 

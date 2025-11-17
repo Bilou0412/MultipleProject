@@ -1,43 +1,121 @@
-# CVLM - Générateur de lettres de motivation
+# CVLM - Générateur de Lettres de Motivation
+
+[![Clean Architecture](https://img.shields.io/badge/architecture-clean-blue.svg)](ARCHITECTURE.md)
+[![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](docker-compose.yml)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](requirements.txt)
 
 ## 🎯 Objectif
-Ce projet permet de générer automatiquement une lettre de motivation à partir :
-- d’un **CV** (PDF)
-- d’une **fiche de poste** (texte ou PDF)
-en utilisant une API LLM.
 
-## 🧱 Architecture
+Extension navigateur pour générer automatiquement des lettres de motivation personnalisées.
+
+**Workflow** :
+1. 🔐 Connexion Google OAuth
+2. 📄 Upload de votre CV  
+3. 🌐 Navigation sur une offre d'emploi
+4. ✨ Génération automatique de la lettre
+5. 💾 Téléchargement au format PDF
+
+---
+
+## 🏗️ Architecture Clean
+
+```
+CVLM/
+├── domain/                    # ⭐ Cœur métier (pur)
+│   ├── entities/              # user, cv, motivational_letter, job_offer
+│   ├── ports/                 # Interfaces (ABC)
+│   └── use_cases/             # Logique métier
+│
+├── infrastructure/adapters/   # 🔧 Implémentations
+│   ├── postgres_*_repository.py
+│   ├── open_ai_api.py / google_gemini_api.py
+│   ├── pypdf_parse.py
+│   ├── fpdf_generator.py / weasyprint_generator.py
+│   └── google_oauth_service.py
+│
+├── extension/                 # 🧩 Chrome Extension
+│   ├── manifest.json          # Manifest v3
+│   ├── generator.js           # Popup avec auth
+│   └── content.js             # Injection dans pages
+│
+└── api_server.py              # 🚀 FastAPI
 ```
 
-project_root/
-│
-├── main.py                  # Point d’entrée
-├── app/
-│   ├── file_manager.py      # Gestion des fichiers et extraction de texte
-│   ├── llm_client.py        # Communication avec l’API LLM
-│   ├── pdf_generator.py     # Génération du PDF final
-│   └── job_application_service.py  # Orchestration du flux
-└── data/
-├── input/               # CV et fiches de poste
-└── output/              # Lettres générées
+**Stack** : FastAPI + PostgreSQL + OAuth + OpenAI GPT + Docker
 
-````
+---
 
 ## ⚙️ Installation
+
 ```bash
-pip install -r requirements.txt
-````
+# 1. Configuration
+cp .env.example .env
+# Éditer .env avec vos clés API
+
+# 2. Lancement
+docker compose up -d
+
+# 3. Vérification
+curl http://localhost:8000/health
+```
+
+---
 
 ## 🚀 Utilisation
 
+### Extension Chrome
+
+1. Ouvrir `chrome://extensions/`
+2. Activer "Mode développeur"
+3. "Charger l'extension non empaquetée" → `extension/`
+4. Se connecter avec Google
+5. Uploader votre CV
+6. Générer des lettres sur les offres d'emploi
+
+---
+
+## 📝 Conventions Clean Code
+
+- **Classes** : PascalCase (`OpenAiLlm`, `PyPdfParser`)
+- **Fonctions** : snake_case (`parse_document`, `send_to_llm`)
+- **Domain** : Aucune dépendance externe
+- **Ports** : Interfaces ABC avec `@abstractmethod`
+- **Adapters** : Implémentent les ports
+
+---
+
+## 🔧 Développement
+
 ```bash
-python main.py
+# Rebuild API
+docker compose build api && docker compose up -d api
+
+# Logs
+docker compose logs -f api
+
+# Reset complet
+docker compose down -v && docker compose up -d
 ```
 
-## 🧠 À venir
+---
 
-* Extraction des CV multi-format (PDF, DOCX)
-* Nettoyage et parsing automatique
-* Génération de PDF final
+## 📚 Documentation
 
-```
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Détails architecture
+- [Makefile](Makefile) - Commandes utiles
+
+---
+
+## ✅ Fonctionnalités
+
+- ✅ Auth Google OAuth + JWT
+- ✅ Upload et stockage de CVs
+- ✅ Extraction texte des PDFs  
+- ✅ Génération OpenAI GPT / Gemini
+- ✅ Export PDF (FPDF/WeasyPrint)
+- ✅ Multi-utilisateurs
+- ✅ Injection dans textareas web
+
+---
+
+**Version** : 1.5.0 - Clean Architecture Edition

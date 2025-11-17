@@ -1,4 +1,4 @@
-# infrastructure/adapters/open_ai.py
+# infrastructure/adapters/google_gemini_api.py
 import os
 from dotenv import load_dotenv
 from google import genai
@@ -6,7 +6,8 @@ from google import genai
 # Charger les variables d'environnement
 load_dotenv()
 
-class LlmGemini:
+
+class GoogleGeminiLlm:
     def __init__(self):
         # Récupérer la clé API depuis les variables d'environnement
         self.api_key = os.getenv('GOOGLE_API_KEY')

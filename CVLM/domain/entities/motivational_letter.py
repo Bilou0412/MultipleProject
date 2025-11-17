@@ -1,11 +1,10 @@
-from domain.entities.document import Document
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
 
 @dataclass
-class MotivationalLetter(Document):
+class MotivationalLetter:
     """
     Représente une lettre de motivation avec métadonnées
     """

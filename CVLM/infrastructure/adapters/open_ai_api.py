@@ -5,7 +5,8 @@ from openai import OpenAI
 # Charger les variables d'environnement depuis le fichier .env
 load_dotenv()
 
-class LlmOpenAI:
+
+class OpenAiLlm:
     def __init__(self):
         # Récupérer la clé API depuis les variables d'environnement
         self.api_key = os.getenv("OPENAI_API_KEY")

@@ -74,7 +74,7 @@ class AnalyseCvOffer:
         
         # Crée les entités
         cv = Cv(raw_text=cv_raw_text)
-        job_offer = JobOffer(job_offer_raw_text)
+        job_offer = JobOffer(raw_text=job_offer_raw_text)
         
         # Génère le prompt et appelle le LLM
         prompt = self._create_prompt(cv, job_offer)

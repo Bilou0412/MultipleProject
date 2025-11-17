@@ -17,7 +17,7 @@
     "http://localhost:8000/*"
   ],
   "oauth2": {
-    "client_id": "825312610018-cjaamh6gf8882lut9t082jhjv9g4l0bo.apps.googleusercontent.com",
+    "client_id": "825312610018-ied76ervclqgmo86iauoes0g1ov8kusr.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/userinfo.email",
       "https://www.googleapis.com/auth/userinfo.profile"

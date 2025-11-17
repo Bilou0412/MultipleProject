@@ -2,7 +2,8 @@
 from domain.ports.pdf_generator import PdfGenerator, Document
 from fpdf import FPDF
 
-class Fpdf_generator(PdfGenerator):
+
+class FpdfGenerator(PdfGenerator):
     def create_pdf(self, document: Document, output_path: str) -> str:
         pdf = FPDF()
         pdf.add_page()
