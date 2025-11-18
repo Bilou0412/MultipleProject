@@ -13,7 +13,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init_db.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - cvlm_network
     healthcheck:
@@ -46,30 +45,6 @@ services:
     networks:
       - cvlm_network
     command: uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload
-
-  # Interface Streamlit (optionnel)
-  streamlit:
-    build:
-      context: .
-      dockerfile: Dockerfile.streamlit
-    container_name: cvlm_streamlit
-    restart: unless-stopped
-    ports:
-      - "8501:8501"
-    environment:
-      - DATABASE_URL=postgresql://cvlm_user:cvlm_password@postgres:5432/cvlm_db
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - FILE_STORAGE_BASE_PATH=/app/data/files
-    volumes:
-      - ./data/files:/app/data/files
-      - ./logs:/app/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - cvlm_network
-    command: streamlit run streamlit_app.py --server.address=0.0.0.0
 
   # PgAdmin (optionnel - pour l'administration de la DB)
   pgadmin:
