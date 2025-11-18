@@ -1,29 +1,23 @@
 """
 API FastAPI pour l'extension navigateur CVLM
-Version 1.5: Support PostgreSQL + Auth Google (rétrocompatible)
+Version 2.0: Refactoré selon principes Clean Code
 """
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import os
 import uuid
 from typing import Optional
 from pathlib import Path
-import PyPDF2
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from domain.use_cases.analyze_cv_and_offer import AnalyseCvOffer
 from domain.entities.user import User
 from domain.entities.cv import Cv
+from domain.services.letter_generation_service import LetterGenerationService
+from domain.services.credit_service import CreditService
+from domain.services.cv_validation_service import CvValidationService
 
-from infrastructure.adapters.pypdf_parse import PyPdfParser
-from infrastructure.adapters.google_gemini_api import GoogleGeminiLlm
-from infrastructure.adapters.fpdf_generator import FpdfGenerator
-from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
-from infrastructure.adapters.open_ai_api import OpenAiLlm
-from infrastructure.adapters.weasyprint_generator import WeasyPrintGenerator
 from infrastructure.adapters.database_config import get_db, init_database
 from infrastructure.adapters.postgres_user_repository import PostgresUserRepository
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
@@ -31,32 +25,33 @@ from infrastructure.adapters.postgres_motivational_letter_repository import Post
 from infrastructure.adapters.local_file_storage import LocalFileStorage
 from infrastructure.adapters.google_oauth_service import GoogleOAuthService
 from infrastructure.adapters.auth_middleware import create_access_token, verify_access_token
+from infrastructure.adapters.pypdf_parse import PyPdfParser
+from infrastructure.adapters.google_gemini_api import GoogleGeminiLlm
+from infrastructure.adapters.open_ai_api import OpenAiLlm
+from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
+from infrastructure.adapters.logger_config import setup_logger
+
+from config.constants import (
+    CORS_ALLOWED_ORIGINS,
+    CORS_ORIGIN_REGEX,
+    FILE_STORAGE_BASE_PATH,
+    TEMP_DIR,
+    OUTPUT_DIR,
+    LLM_PROVIDER_GEMINI,
+    TEXT_TYPE_WHY_JOIN
+)
+
+# Logger
+logger = setup_logger(__name__)
 
 # Configuration
-app = FastAPI(title="CVLM API", version="1.5.0")
+app = FastAPI(title="CVLM API", version="2.0.0")
 
-# Note: Rate limiter supprimé - utilisation d'un système de crédits par utilisateur à la place
-
-# CORS Configuration - Sécurisé pour production
-ALLOWED_ORIGINS = [
-    "http://localhost:8000",  # Dev local
-    "http://127.0.0.1:8000",  # Dev local
-    # Sites d'offres d'emploi (pour content scripts)
-    "https://www.welcometothejungle.com",
-    "https://www.linkedin.com",
-    "https://www.indeed.fr",
-]
-
-# Ajouter domaine production si défini
-PRODUCTION_DOMAIN = os.getenv("PRODUCTION_DOMAIN")
-if PRODUCTION_DOMAIN:
-    ALLOWED_ORIGINS.append(f"https://{PRODUCTION_DOMAIN}")
-
-# Configuration CORS avec regex pour chrome-extension://
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # Origines spécifiques
-    allow_origin_regex=r"chrome-extension://.*",  # Regex pour extensions Chrome
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
@@ -68,22 +63,15 @@ async def startup_event():
     """Initialise la base de données au démarrage"""
     try:
         init_database()
-        print("✅ Base de données initialisée")
+        logger.info("Base de données initialisée avec succès")
     except Exception as e:
-        print(f"⚠️ Erreur initialisation DB (mode fallback): {e}")
+        logger.error(f"Erreur initialisation DB: {e}")
+        raise
 
-# Storage pour les fichiers
-FILE_STORAGE_BASE_PATH = os.getenv("FILE_STORAGE_BASE_PATH", "data/files")
+# Storage et répertoires
 file_storage = LocalFileStorage(base_path=FILE_STORAGE_BASE_PATH)
-
-# Legacy storage (fallback)
-TEMP_DIR = Path("data/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = Path("data/output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Legacy storage supprimé - PostgreSQL gère maintenant toute la persistance
 
 # === Dependency Injection ===
 
@@ -122,8 +110,8 @@ def get_current_user(
     db: Session = Depends(get_db)
 ) -> User:
     """
-    Extrait l'utilisateur depuis le JWT (si fourni) ou retourne l'utilisateur par défaut
-    Compatible avec l'ancien système (pas de JWT) et le nouveau (avec JWT)
+    Extrait l'utilisateur depuis le JWT ou retourne l'utilisateur par défaut
+    Compatible avec ancien système (sans JWT) et nouveau (avec JWT)
     """
     if authorization and authorization.startswith("Bearer "):
         token = authorization.replace("Bearer ", "")
@@ -135,11 +123,13 @@ def get_current_user(
                 user_repo = PostgresUserRepository(db)
                 user = user_repo.get_by_id(user_id)
                 if user:
+                    logger.debug(f"Utilisateur authentifié: {user.email}")
                     return user
         except Exception as e:
-            print(f"⚠️ JWT invalide: {e}")
+            logger.warning(f"JWT invalide: {e}")
     
     # Fallback vers utilisateur par défaut
+    logger.debug("Utilisation de l'utilisateur par défaut")
     return get_or_create_default_user(db)
 
 # === Modèles ===
@@ -209,17 +199,18 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "version": "1.5.0"}
+    return {"status": "healthy", "version": "2.0.0"}
 
 @app.get("/user/credits")
 async def get_user_credits(
     current_user: User = Depends(get_current_user)
 ):
     """Retourne les crédits restants de l'utilisateur"""
+    from config.constants import DEFAULT_PDF_CREDITS, DEFAULT_TEXT_CREDITS
     return {
         "pdf_credits": current_user.pdf_credits,
         "text_credits": current_user.text_credits,
-        "total_pdf_credits": 10,
+        "total_pdf_credits": DEFAULT_PDF_CREDITS,
         "total_text_credits": 10
     }
 
@@ -396,101 +387,45 @@ async def generate_cover_letter(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Génère une lettre de motivation en PDF"""
     try:
-        # Vérifier les crédits PDF
-        if not current_user.has_pdf_credits():
-            raise HTTPException(
-                status_code=403, 
-                detail=f"Crédits PDF épuisés. Vous avez utilisé vos {10} générations PDF gratuites."
-            )
+        # Services
+        cv_validation_service = CvValidationService(PostgresCvRepository(db))
+        credit_service = CreditService(PostgresUserRepository(db))
+        letter_service = LetterGenerationService()
         
-        # Récupérer le CV depuis PostgreSQL
-        cv_repo = PostgresCvRepository(db)
-        cv = cv_repo.get_by_id(cv_id)
+        # Valider le CV
+        cv = cv_validation_service.get_and_validate_cv(cv_id, current_user)
         
-        # Vérifier que le CV appartient à l'utilisateur
-        if cv and cv.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Accès interdit à ce CV")
-        
-        if not cv:
-            raise HTTPException(status_code=404, detail="CV non trouvé")
-        
-        cv_path = Path(cv.file_path)
-        
-        if not cv_path.exists():
-            raise HTTPException(status_code=404, detail="Fichier CV introuvable")
-        
-        # Services LLM et PDF
-        document_parser = PyPdfParser()
-        job_fetcher = WelcomeToTheJungleFetcher()
-        llm = GoogleGeminiLlm() if llm_provider.lower() == "gemini" else OpenAiLlm()
-        pdf_gen = WeasyPrintGenerator() if pdf_generator.lower() == "weasyprint" else FpdfGenerator()
-        
-        use_case = AnalyseCvOffer(
-            job_offer_fetcher=job_fetcher,
-            document_parser=document_parser,
-            llm=llm,
-            pdf_generator=pdf_gen
-        )
+        # Vérifier et utiliser un crédit (lève une exception si pas de crédit)
+        credit_service.check_and_use_pdf_credit(current_user)
         
         # Générer la lettre
-        letter_id = str(uuid.uuid4())
-        output_path = OUTPUT_DIR / f"lettre_{letter_id}.pdf"
-        
-        result_path = use_case.execute(
-            cv_path=cv_path,
-            jo_path=job_url,
-            output_path=str(output_path),
-            use_scraper=True
+        letter_id, pdf_path, letter_text = letter_service.generate_letter_pdf(
+            cv=cv,
+            job_url=job_url,
+            llm_provider=llm_provider,
+            pdf_generator=pdf_generator,
+            user=current_user
         )
         
-        letter_text = extract_text_from_pdf(result_path)
-        if not letter_text:
-            letter_text = "Lettre générée. Consultez le PDF."
-        
-        # Sauvegarder dans PostgreSQL
+        # Sauvegarder en base de données
         try:
-            from domain.entities.motivational_letter import MotivationalLetter
-            letter_repo = PostgresMotivationalLetterRepository(db)
-            file_storage = LocalFileStorage()
-            
-            # Lire le contenu du PDF
-            with open(result_path, 'rb') as f:
-                pdf_content = f.read()
-            
-            # Sauvegarder le fichier via le storage
-            file_path = file_storage.save_letter(
+            letter = letter_service.save_letter_to_storage(
                 letter_id=letter_id,
-                content=pdf_content,
-                filename=f"lettre_{letter_id}.pdf"
-            )
-            
-            # Créer l'entité MotivationalLetter
-            letter = MotivationalLetter(
-                id=letter_id,
-                user_id=current_user.id,
+                pdf_path=pdf_path,
                 cv_id=cv_id,
-                job_offer_url=job_url,
-                filename=f"lettre_{letter_id}.pdf",
-                file_path=file_path,
-                file_size=len(pdf_content),
-                raw_text=letter_text,
-                llm_provider=llm_provider
+                job_url=job_url,
+                letter_text=letter_text,
+                llm_provider=llm_provider,
+                user=current_user
             )
             
-            # Sauvegarder en base
+            letter_repo = PostgresMotivationalLetterRepository(db)
             letter_repo.create(letter)
-            print(f"✅ Lettre sauvegardée en base: {letter_id}")
-            
-            # Décrémenter le crédit PDF de l'utilisateur
-            current_user.use_pdf_credit()
-            user_repo = PostgresUserRepository(db)
-            user_repo.update(current_user)
-            print(f"✅ Crédit PDF utilisé. Crédits restants: {current_user.pdf_credits}")
             
         except Exception as e:
-            print(f"⚠️ Erreur sauvegarde PostgreSQL: {e}")
-            # Continue même si la sauvegarde échoue
+            logger.warning(f"Erreur sauvegarde lettre en base: {e}")
         
         return GenerationResponse(
             status="success",
@@ -498,78 +433,85 @@ async def generate_cover_letter(
             download_url=f"/download-letter/{letter_id}",
             letter_text=letter_text
         )
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erreur génération: {str(e)}")
+        logger.error(f"Erreur génération lettre: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la génération: {str(e)}")
 
 
 @app.post("/generate-text", response_model=TextGenerationResponse)
 async def generate_text(
-    data: TextGenerationRequest,  # Body de la requête
+    data: TextGenerationRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Génère un texte de motivation personnalisé"""
     try:
-        # Vérifier les crédits texte
-        if not current_user.has_text_credits():
+        # Validation
+        if not data.cv_id:
             raise HTTPException(
-                status_code=403,
-                detail=f"Crédits texte épuisés. Vous avez utilisé vos {10} générations de texte gratuites."
+                status_code=400,
+                detail="Aucun CV sélectionné. Veuillez d'abord télécharger et sélectionner un CV."
             )
         
-        # Vérifier que le CV est fourni et existe
-        if not data.cv_id:
-            raise HTTPException(status_code=400, detail="Aucun CV sélectionné. Veuillez d'abord télécharger et sélectionner un CV.")
+        # Services
+        cv_validation_service = CvValidationService(PostgresCvRepository(db))
+        credit_service = CreditService(PostgresUserRepository(db))
         
-        # Récupérer le CV depuis PostgreSQL
-        cv_repo = PostgresCvRepository(db)
-        cv = cv_repo.get_by_id(data.cv_id)
+        # Valider le CV et vérifier crédit
+        cv = cv_validation_service.get_and_validate_cv(data.cv_id, current_user)
+        credit_service.check_and_use_text_credit(current_user)
         
-        # Vérifier que le CV appartient à l'utilisateur
-        if cv and cv.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Accès interdit à ce CV")
-        
-        if not cv:
-            raise HTTPException(status_code=404, detail="CV non trouvé. Veuillez sélectionner un CV valide.")
-        
-        cv_path = Path(cv.file_path)
-
-        if not cv_path.exists():
-            raise HTTPException(status_code=404, detail="Fichier CV introuvable.")
-
+        # Parser et fetcher
         document_parser = PyPdfParser()
         job_fetcher = WelcomeToTheJungleFetcher()
-        llm = GoogleGeminiLlm() if data.llm_provider.lower() == "gemini" else OpenAiLlm()
+        llm = GoogleGeminiLlm() if data.llm_provider.lower() == LLM_PROVIDER_GEMINI else OpenAiLlm()
         
-        cv_text = document_parser.parse_document(input_path=str(cv_path))
-
+        cv_text = document_parser.parse_document(input_path=str(cv.file_path))
+        
         job_offer_text = ""
         try:
             job_offer_text = job_fetcher.fetch(url=data.job_url)
-        except Exception:
-            pass
-
-        if data.text_type == "why_join":
-            prompt = f"Vous êtes un assistant expert en communication RH.\n\nContexte (CV) :\n{cv_text}\n\nOffre d'emploi :\n{job_offer_text}\n\nTâche : Rédigez une réponse concise (3-6 phrases) à la question : 'Expliquez-nous pourquoi vous souhaitez nous rejoindre.' Utilisez un ton professionnel et motivé. Ne fournissez que le texte de la réponse, sans préambule ni signature."
-        else:
-            prompt = f"Vous êtes un assistant expert.\n\nContexte (CV) :\n{cv_text}\n\nOffre d'emploi :\n{job_offer_text}\n\nTâche : Rédigez un court paragraphe adapté à l'offre."
-
-        generated = llm.send_to_llm(prompt)
+        except Exception as e:
+            logger.warning(f"Erreur fetch offre d'emploi: {e}")
         
-        # Décrémenter le crédit texte de l'utilisateur
-        current_user.use_text_credit()
-        user_repo = PostgresUserRepository(db)
-        user_repo.update(current_user)
-        print(f"✅ Crédit texte utilisé. Crédits restants: {current_user.text_credits}")
+        # Créer le prompt
+        prompt = _build_text_generation_prompt(cv_text, job_offer_text, data.text_type)
         
-        return TextGenerationResponse(status="success", text=generated)
+        # Générer
+        generated_text = llm.send_to_llm(prompt)
+        logger.info(f"Texte généré pour {current_user.email}")
+        
+        return TextGenerationResponse(status="success", text=generated_text)
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erreur génération texte: {e}")
+        logger.error(f"Erreur génération texte: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _build_text_generation_prompt(cv_text: str, job_offer_text: str, text_type: str) -> str:
+    """Construit le prompt pour la génération de texte"""
+    if text_type == TEXT_TYPE_WHY_JOIN:
+        return (
+            f"Vous êtes un assistant expert en communication RH.\n\n"
+            f"Contexte (CV) :\n{cv_text}\n\n"
+            f"Offre d'emploi :\n{job_offer_text}\n\n"
+            f"Tâche : Rédigez une réponse concise (3-6 phrases) à la question : "
+            f"'Expliquez-nous pourquoi vous souhaitez nous rejoindre.' "
+            f"Utilisez un ton professionnel et motivé. Ne fournissez que le texte de la réponse, "
+            f"sans préambule ni signature."
+        )
+    return (
+        f"Vous êtes un assistant expert.\n\n"
+        f"Contexte (CV) :\n{cv_text}\n\n"
+        f"Offre d'emploi :\n{job_offer_text}\n\n"
+        f"Tâche : Rédigez un court paragraphe adapté à l'offre."
+    )
+
 
 @app.get("/download-letter/{letter_id}")
 async def download_letter(
@@ -580,19 +522,14 @@ async def download_letter(
     """Télécharge une lettre de motivation depuis PostgreSQL"""
     try:
         letter_repo = PostgresMotivationalLetterRepository(db)
-        file_storage = LocalFileStorage()
-        
-        # Récupérer la lettre depuis la base
         letter = letter_repo.get_by_id(letter_id)
         
         if not letter:
             raise HTTPException(status_code=404, detail="Lettre non trouvée")
         
-        # Vérifier que la lettre appartient à l'utilisateur
         if letter.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="Accès interdit à cette lettre")
         
-        # Récupérer le chemin du fichier
         file_path = file_storage.get_letter_path(letter_id)
         
         if not file_path or not Path(file_path).exists():
@@ -603,11 +540,13 @@ async def download_letter(
             filename=letter.filename or f"lettre_{letter_id}.pdf",
             media_type="application/pdf"
         )
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erreur téléchargement lettre: {e}")
+        logger.error(f"Erreur téléchargement lettre: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur lors du téléchargement: {str(e)}")
+
 
 @app.delete("/cleanup/{cv_id}")
 async def cleanup_files(
@@ -615,22 +554,19 @@ async def cleanup_files(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Supprime un CV et ses fichiers associés"""
     try:
+        cv_validation_service = CvValidationService(PostgresCvRepository(db))
+        cv = cv_validation_service.get_and_validate_cv(cv_id, current_user)
+        
+        # Supprimer fichier et base de données
+        file_storage.delete_cv(cv_id)
         cv_repo = PostgresCvRepository(db)
-        cv = cv_repo.get_by_id(cv_id)
+        cv_repo.delete(cv_id)
         
-        # Vérifier que le CV appartient à l'utilisateur
-        if cv and cv.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Accès interdit à ce CV")
-        
-        if cv:
-            # Supprimer le fichier physique
-            file_storage.delete_cv(cv_id)
-            
-            # Supprimer de PostgreSQL
-            cv_repo.delete(cv_id)
-        
+        logger.info(f"CV supprimé: {cv_id} par {current_user.email}")
         return {"status": "success"}
+        
     except HTTPException:
         raise
     except Exception as e:
