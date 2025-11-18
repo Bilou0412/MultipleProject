@@ -460,6 +460,73 @@
             color: var(--error);
         }
 
+        /* Letters Styles */
+        .letter-item {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .letter-item:hover {
+            border-color: var(--primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .letter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 8px;
+        }
+
+        .letter-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .letter-meta {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .letter-download {
+            padding: 6px 12px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .letter-download:hover {
+            background: var(--primary-dark);
+        }
+
+        .letters-empty {
+            text-align: center;
+            padding: 24px 16px;
+            color: var(--text-tertiary);
+            font-size: 13px;
+        }
+
+        /* Animations */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
         /* Responsive */
         @media (max-width: 480px) {
             .container {
@@ -543,10 +610,26 @@
                         <div class="hint">💡 Conseil : Ouvrez CVLM directement depuis la page de l'offre.</div>
                     </div>
 
-                    <!-- Section 2: CV Upload -->
+                    <!-- Section 1.5: Mes lettres générées -->
+                    <div class="section">
+                        <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span>📝</span>
+                                Mes lettres générées
+                            </div>
+                            <button id="refresh-letters-btn" style="background: none; border: none; cursor: pointer; font-size: 18px; color: var(--text-secondary); padding: 4px 8px; border-radius: 4px; transition: all 0.2s;" title="Actualiser" onmouseover="this.style.background='rgba(37, 99, 235, 0.1)'; this.style.color='var(--primary)'" onmouseout="this.style.background='none'; this.style.color='var(--text-secondary)'">
+                                🔄
+                            </button>
+                        </div>
+                        <div id="letters-list" style="margin-top: 12px;">
+                            <!-- Les lettres seront ajoutées ici dynamiquement -->
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Mes CV -->
                     <div class="section">
                         <div class="section-title">
-                            <span>📄</span>
+                            <span>�</span>
                             Mes CV
                         </div>
                         <div class="file-input-wrapper">

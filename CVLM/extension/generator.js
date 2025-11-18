@@ -19,6 +19,7 @@ const statusDiv = document.getElementById('status');
 const noUrlMessage = document.getElementById('no-url-message');
 const mainContent = document.getElementById('main-content');
 const pdfSelect = document.getElementById('pdf-select');
+const refreshLettersBtn = document.getElementById('refresh-letters-btn');
 
 let currentUrl = '';
 let selectedCvId = null;
@@ -152,6 +153,19 @@ async function init() {
     
     loadPreferences();
     await loadCvList();
+    await loadLettersList();
+}
+
+// === Bouton Rafraîchir les lettres ===
+
+if (refreshLettersBtn) {
+    refreshLettersBtn.addEventListener('click', async () => {
+        refreshLettersBtn.style.animation = 'spin 0.5s linear';
+        await loadLettersList();
+        setTimeout(() => {
+            refreshLettersBtn.style.animation = '';
+        }, 500);
+    });
 }
 
 // === Upload CV ===
@@ -253,6 +267,133 @@ async function loadCvList() {
     }
 }
 
+// === Liste des lettres générées ===
+
+async function loadLettersList() {
+    const lettersListContainer = document.getElementById('letters-list');
+    
+    try {
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        
+        console.log('🔍 Chargement des lettres...');
+        const response = await fetch(`${API_URL}/list-letters`, { headers });
+        const data = await response.json();
+        
+        console.log('📬 Réponse API:', data);
+        
+        if (!response.ok || !data.letters) {
+            console.error('❌ Erreur réponse:', response.status, data);
+            lettersListContainer.innerHTML = '<div class="letters-empty">Aucune lettre générée</div>';
+            return;
+        }
+
+        if (data.letters.length === 0) {
+            console.log('ℹ️ Aucune lettre trouvée');
+            lettersListContainer.innerHTML = '<div class="letters-empty">📝 Vous n\'avez pas encore généré de lettre.<br>Commencez dès maintenant !</div>';
+            return;
+        }
+
+        console.log(`✅ ${data.letters.length} lettre(s) trouvée(s)`);
+        lettersListContainer.innerHTML = data.letters.map(letter => {
+            const jobTitle = extractJobTitle(letter.job_offer_url);
+            return `
+                <div class="letter-item">
+                    <div class="letter-header">
+                        <div>
+                            <div class="letter-title">${jobTitle}</div>
+                            <div class="letter-meta">
+                                <span>📄 ${letter.cv_filename}</span>
+                                <span>📅 ${formatDate(letter.created_at)}</span>
+                                ${letter.job_offer_url ? `<span title="${letter.job_offer_url}" style="cursor: help;">🔗 Offre en ligne</span>` : ''}
+                            </div>
+                        </div>
+                        <button class="letter-download" data-letter-id="${letter.letter_id}">
+                            ⬇️ PDF
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Ajouter les event listeners pour télécharger
+        lettersListContainer.querySelectorAll('.letter-download').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const letterId = e.target.dataset.letterId;
+                await downloadLetter(letterId);
+            });
+        });
+
+        // Event listener pour afficher l'URL complète au clic
+        lettersListContainer.querySelectorAll('.letter-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                if (!e.target.classList.contains('letter-download')) {
+                    const url = item.querySelector('[title]')?.getAttribute('title');
+                    if (url) {
+                        chrome.tabs.create({ url });
+                    }
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Erreur chargement lettres:', error);
+        lettersListContainer.innerHTML = '<div class="letters-empty" style="color: var(--error);">❌ Erreur de chargement</div>';
+    }
+}
+
+async function downloadLetter(letterId) {
+    try {
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        
+        const response = await fetch(`${API_URL}/download-letter/${letterId}`, { headers });
+        
+        if (!response.ok) {
+            throw new Error('Erreur de téléchargement');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lettre_motivation_${letterId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        showStatus('success', 'Lettre téléchargée');
+    } catch (error) {
+        console.error('Erreur téléchargement lettre:', error);
+        showStatus('error', 'Erreur de téléchargement');
+    }
+}
+
+function extractJobTitle(url) {
+    if (!url) return 'Lettre de motivation';
+    
+    // Extraire le titre depuis l'URL
+    try {
+        const urlObj = new URL(url);
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        
+        // Pour Welcome to the Jungle: /fr/companies/xxx/jobs/titre-du-poste_xxx
+        if (url.includes('welcometothejungle.com')) {
+            const jobPart = pathParts[pathParts.length - 1];
+            const title = jobPart.split('_')[0].replace(/-/g, ' ');
+            return title.charAt(0).toUpperCase() + title.slice(1);
+        }
+        
+        // Pour LinkedIn: /jobs/view/titre-du-poste-xxx
+        if (url.includes('linkedin.com')) {
+            const title = pathParts[pathParts.length - 1].split('-').slice(0, -1).join(' ');
+            return title.charAt(0).toUpperCase() + title.slice(1);
+        }
+        
+        return 'Lettre de motivation';
+    } catch {
+        return 'Lettre de motivation';
+    }
+}
+
 async function deleteCv(cvId) {
     try {
         const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
@@ -340,10 +481,14 @@ if (insertBtn) {
                     } else {
                         showStatus('success', 'Lettre générée et téléchargement lancé !');
                     }
+                    // Recharger la liste des lettres
+                    loadLettersList();
                 });
             } else {
                 chrome.tabs.create({ url: downloadUrl });
                 showStatus('success', 'Lettre générée — ouverture du PDF');
+                // Recharger la liste des lettres
+                loadLettersList();
             }
         } catch (error) {
             showStatus('error', error.message || 'Erreur lors de la génération');

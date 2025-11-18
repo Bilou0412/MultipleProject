@@ -335,6 +335,46 @@ async def list_cvs(
                 ))
         return CvListResponse(status="success", cvs=cvs)
 
+@app.get("/list-letters")
+async def list_letters(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Liste toutes les lettres générées par l'utilisateur"""
+    try:
+        letter_repo = PostgresMotivationalLetterRepository(db)
+        cv_repo = PostgresCvRepository(db)
+        
+        # Récupérer toutes les lettres de l'utilisateur
+        letters = letter_repo.get_by_user_id(current_user.id)
+        
+        letter_infos = []
+        for letter in letters:
+            # Récupérer le CV associé
+            cv = cv_repo.get_by_id(letter.cv_id) if letter.cv_id else None
+            
+            letter_infos.append({
+                "letter_id": letter.id,
+                "filename": letter.filename or "lettre_motivation.pdf",
+                "cv_filename": cv.filename if cv else "CV supprimé",
+                "job_offer_url": letter.job_offer_url or "",
+                "created_at": letter.created_at.isoformat(),
+                "file_size": letter.file_size,
+                "llm_provider": letter.llm_provider
+            })
+        
+        # Trier par date décroissante (plus récent en premier)
+        letter_infos.sort(key=lambda x: x["created_at"], reverse=True)
+        
+        return {
+            "status": "success",
+            "letters": letter_infos,
+            "total": len(letter_infos)
+        }
+    except Exception as e:
+        print(f"❌ Erreur liste lettres: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération des lettres: {str(e)}")
+
 @app.post("/generate-cover-letter", response_model=GenerationResponse)
 async def generate_cover_letter(
     cv_id: str = Form(...),
@@ -392,7 +432,44 @@ async def generate_cover_letter(
         if not letter_text:
             letter_text = "Lettre générée. Consultez le PDF."
         
-        # Stocker dans legacy storage
+        # Sauvegarder dans PostgreSQL
+        try:
+            from domain.entities.motivational_letter import MotivationalLetter
+            letter_repo = PostgresMotivationalLetterRepository(db)
+            file_storage = LocalFileStorage()
+            
+            # Lire le contenu du PDF
+            with open(result_path, 'rb') as f:
+                pdf_content = f.read()
+            
+            # Sauvegarder le fichier via le storage
+            file_path = file_storage.save_letter(
+                letter_id=letter_id,
+                content=pdf_content,
+                filename=f"lettre_{letter_id}.pdf"
+            )
+            
+            # Créer l'entité MotivationalLetter
+            letter = MotivationalLetter(
+                id=letter_id,
+                user_id=current_user.id,
+                cv_id=cv_id,
+                job_offer_url=job_url,
+                filename=f"lettre_{letter_id}.pdf",
+                file_path=file_path,
+                file_size=len(pdf_content),
+                raw_text=letter_text,
+                llm_provider=llm_provider
+            )
+            
+            # Sauvegarder en base
+            letter_repo.create(letter)
+            print(f"✅ Lettre sauvegardée en base: {letter_id}")
+        except Exception as e:
+            print(f"⚠️ Erreur sauvegarde PostgreSQL: {e}")
+            # Continue même si la sauvegarde échoue
+        
+        # Stocker dans legacy storage (pour compatibilité)
         if "letters" not in storage:
             storage["letters"] = {}
         storage["letters"][letter_id] = result_path
@@ -475,6 +552,44 @@ async def download_file(file_id: str):
         raise HTTPException(status_code=404, detail="Le fichier n'existe plus")
     
     return FileResponse(path=file_path, filename="lettre_motivation.pdf", media_type="application/pdf")
+
+@app.get("/download-letter/{letter_id}")
+async def download_letter(
+    letter_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Télécharge une lettre de motivation depuis PostgreSQL"""
+    try:
+        letter_repo = PostgresMotivationalLetterRepository(db)
+        file_storage = LocalFileStorage()
+        
+        # Récupérer la lettre depuis la base
+        letter = letter_repo.get_by_id(letter_id)
+        
+        if not letter:
+            raise HTTPException(status_code=404, detail="Lettre non trouvée")
+        
+        # Vérifier que la lettre appartient à l'utilisateur
+        if letter.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Accès interdit à cette lettre")
+        
+        # Récupérer le chemin du fichier
+        file_path = file_storage.get_letter_path(letter_id)
+        
+        if not file_path or not Path(file_path).exists():
+            raise HTTPException(status_code=404, detail="Fichier PDF introuvable")
+        
+        return FileResponse(
+            path=file_path,
+            filename=letter.filename or f"lettre_{letter_id}.pdf",
+            media_type="application/pdf"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erreur téléchargement lettre: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors du téléchargement: {str(e)}")
 
 @app.delete("/cleanup/{cv_id}")
 async def cleanup_files(
