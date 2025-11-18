@@ -2,8 +2,8 @@
 API FastAPI pour l'extension navigateur CVLM
 Version 1.5: Support PostgreSQL + Auth Google (rétrocompatible)
 """
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -35,12 +35,31 @@ from infrastructure.adapters.auth_middleware import create_access_token, verify_
 # Configuration
 app = FastAPI(title="CVLM API", version="1.5.0")
 
+# Note: Rate limiter supprimé - utilisation d'un système de crédits par utilisateur à la place
+
+# CORS Configuration - Sécurisé pour production
+ALLOWED_ORIGINS = [
+    "http://localhost:8000",  # Dev local
+    "http://127.0.0.1:8000",  # Dev local
+    # Sites d'offres d'emploi (pour content scripts)
+    "https://www.welcometothejungle.com",
+    "https://www.linkedin.com",
+    "https://www.indeed.fr",
+]
+
+# Ajouter domaine production si défini
+PRODUCTION_DOMAIN = os.getenv("PRODUCTION_DOMAIN")
+if PRODUCTION_DOMAIN:
+    ALLOWED_ORIGINS.append(f"https://{PRODUCTION_DOMAIN}")
+
+# Configuration CORS avec regex pour chrome-extension://
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,  # Origines spécifiques
+    allow_origin_regex=r"chrome-extension://.*",  # Regex pour extensions Chrome
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Initialiser la base de données au démarrage
@@ -191,6 +210,18 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "version": "1.5.0"}
+
+@app.get("/user/credits")
+async def get_user_credits(
+    current_user: User = Depends(get_current_user)
+):
+    """Retourne les crédits restants de l'utilisateur"""
+    return {
+        "pdf_credits": current_user.pdf_credits,
+        "text_credits": current_user.text_credits,
+        "total_pdf_credits": 10,
+        "total_text_credits": 10
+    }
 
 @app.post("/auth/google", response_model=AuthTokenResponse)
 async def auth_google(
@@ -385,6 +416,13 @@ async def generate_cover_letter(
     db: Session = Depends(get_db)
 ):
     try:
+        # Vérifier les crédits PDF
+        if not current_user.has_pdf_credits():
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Crédits PDF épuisés. Vous avez utilisé vos {10} générations PDF gratuites."
+            )
+        
         # Récupérer le CV depuis PostgreSQL
         cv_repo = PostgresCvRepository(db)
         cv = cv_repo.get_by_id(cv_id)
@@ -465,6 +503,13 @@ async def generate_cover_letter(
             # Sauvegarder en base
             letter_repo.create(letter)
             print(f"✅ Lettre sauvegardée en base: {letter_id}")
+            
+            # Décrémenter le crédit PDF de l'utilisateur
+            current_user.use_pdf_credit()
+            user_repo = PostgresUserRepository(db)
+            user_repo.update(current_user)
+            print(f"✅ Crédit PDF utilisé. Crédits restants: {current_user.pdf_credits}")
+            
         except Exception as e:
             print(f"⚠️ Erreur sauvegarde PostgreSQL: {e}")
             # Continue même si la sauvegarde échoue
@@ -489,18 +534,25 @@ async def generate_cover_letter(
 
 @app.post("/generate-text", response_model=TextGenerationResponse)
 async def generate_text(
-    request: TextGenerationRequest,
+    data: TextGenerationRequest,  # Body de la requête
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
+        # Vérifier les crédits texte
+        if not current_user.has_text_credits():
+            raise HTTPException(
+                status_code=403,
+                detail=f"Crédits texte épuisés. Vous avez utilisé vos {10} générations de texte gratuites."
+            )
+        
         # Vérifier que le CV est fourni et existe
-        if not request.cv_id:
+        if not data.cv_id:
             raise HTTPException(status_code=400, detail="Aucun CV sélectionné. Veuillez d'abord télécharger et sélectionner un CV.")
         
         # Récupérer le CV depuis PostgreSQL
         cv_repo = PostgresCvRepository(db)
-        cv = cv_repo.get_by_id(request.cv_id)
+        cv = cv_repo.get_by_id(data.cv_id)
         
         # Vérifier que le CV appartient à l'utilisateur
         if cv and cv.user_id != current_user.id:
@@ -508,9 +560,9 @@ async def generate_text(
         
         if not cv:
             # Fallback vers legacy storage si besoin
-            if request.cv_id not in storage["cvs"]:
+            if data.cv_id not in storage["cvs"]:
                 raise HTTPException(status_code=404, detail="CV non trouvé. Veuillez sélectionner un CV valide.")
-            cv_path = Path(storage["cvs"][request.cv_id]["path"])
+            cv_path = Path(storage["cvs"][data.cv_id]["path"])
         else:
             cv_path = Path(cv.file_path)
 
@@ -519,22 +571,29 @@ async def generate_text(
 
         document_parser = PyPdfParser()
         job_fetcher = WelcomeToTheJungleFetcher()
-        llm = GoogleGeminiLlm() if request.llm_provider.lower() == "gemini" else OpenAiLlm()
+        llm = GoogleGeminiLlm() if data.llm_provider.lower() == "gemini" else OpenAiLlm()
         
         cv_text = document_parser.parse_document(input_path=str(cv_path))
 
         job_offer_text = ""
         try:
-            job_offer_text = job_fetcher.fetch(url=request.job_url)
+            job_offer_text = job_fetcher.fetch(url=data.job_url)
         except Exception:
             pass
 
-        if request.text_type == "why_join":
+        if data.text_type == "why_join":
             prompt = f"Vous êtes un assistant expert en communication RH.\n\nContexte (CV) :\n{cv_text}\n\nOffre d'emploi :\n{job_offer_text}\n\nTâche : Rédigez une réponse concise (3-6 phrases) à la question : 'Expliquez-nous pourquoi vous souhaitez nous rejoindre.' Utilisez un ton professionnel et motivé. Ne fournissez que le texte de la réponse, sans préambule ni signature."
         else:
             prompt = f"Vous êtes un assistant expert.\n\nContexte (CV) :\n{cv_text}\n\nOffre d'emploi :\n{job_offer_text}\n\nTâche : Rédigez un court paragraphe adapté à l'offre."
 
         generated = llm.send_to_llm(prompt)
+        
+        # Décrémenter le crédit texte de l'utilisateur
+        current_user.use_text_credit()
+        user_repo = PostgresUserRepository(db)
+        user_repo.update(current_user)
+        print(f"✅ Crédit texte utilisé. Crédits restants: {current_user.text_credits}")
+        
         return TextGenerationResponse(status="success", text=generated)
     except HTTPException:
         raise

@@ -19,6 +19,9 @@ class UserModel(Base):
     google_id = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
     profile_picture_url = Column(String, nullable=True)
+    # Crédits d'essai (trial credits)
+    pdf_credits = Column(Integer, nullable=False, default=10)
+    text_credits = Column(Integer, nullable=False, default=10)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 

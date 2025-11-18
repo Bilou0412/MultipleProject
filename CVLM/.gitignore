@@ -71,4 +71,4 @@ alembic/versions/*.pyc
 .ipynb_checkpoints
 
 # Streamlit
-.streamlit/secrets.toml
+.streamlit/secrets.toml.env.backup

@@ -1,6 +1,6 @@
 console.log('🚀 CVLM: Content script chargé');
 
-const API_URL = 'http://localhost:8000';
+// La configuration API_URL est importée via manifest.json depuis config.js
 const currentUrl = window.location.href;
 const isJobPage = /welcometothejungle\.com\/.*\/jobs\/.*|linkedin\.com\/jobs\/.*|indeed\.fr\/.*\/viewjob.*/.test(currentUrl);
 

@@ -37,6 +37,8 @@ class PostgresUserRepository(UserRepository):
             google_id=model.google_id,
             name=model.name,
             profile_picture_url=model.profile_picture_url,
+            pdf_credits=model.pdf_credits,
+            text_credits=model.text_credits,
             created_at=model.created_at,
             updated_at=model.updated_at
         )
@@ -49,6 +51,8 @@ class PostgresUserRepository(UserRepository):
             google_id=user.google_id,
             name=user.name,
             profile_picture_url=user.profile_picture_url,
+            pdf_credits=user.pdf_credits,
+            text_credits=user.text_credits,
             created_at=user.created_at,
             updated_at=user.updated_at
         )
@@ -114,6 +118,8 @@ class PostgresUserRepository(UserRepository):
             model.google_id = user.google_id
             model.name = user.name
             model.profile_picture_url = user.profile_picture_url
+            model.pdf_credits = user.pdf_credits
+            model.text_credits = user.text_credits
             model.updated_at = user.updated_at
             
             session.commit()

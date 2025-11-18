@@ -14,10 +14,11 @@
     "https://www.welcometothejungle.com/*",
     "https://www.linkedin.com/*",
     "https://www.indeed.fr/*",
-    "http://localhost:8000/*"
+    "http://localhost:8000/*",
+    "https://*/*"
   ],
   "oauth2": {
-    "client_id": "825312610018-ied76ervclqgmo86iauoes0g1ov8kusr.apps.googleusercontent.com",
+    "client_id": "825312610018-knniccb9m2o9faooksh57k4cq3s9b9tq.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/userinfo.email",
       "https://www.googleapis.com/auth/userinfo.profile"
@@ -46,7 +47,7 @@
         "https://www.linkedin.com/jobs/*",
         "https://www.indeed.fr/*/viewjob*"
       ],
-      "js": ["content.js"],
+      "js": ["config.js", "content.js"],
       "css": ["content.css"]
     }
   ],

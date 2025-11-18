@@ -1,4 +1,5 @@
-const API_URL = 'http://localhost:8000';
+// Importer la configuration depuis config.js
+// L'URL API est maintenant définie dans config.js selon l'environnement
 
 // Auth Elements
 const authSection = document.getElementById('auth-section');
@@ -152,8 +153,42 @@ async function init() {
     });
     
     loadPreferences();
+    await loadCredits(); // Charger les crédits
     await loadCvList();
     await loadLettersList();
+}
+
+// === Charger les crédits utilisateur ===
+async function loadCredits() {
+    try {
+        const response = await fetch(`${API_URL}/user/credits`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (response.ok) {
+            const credits = await response.json();
+            document.getElementById('pdf-credits').textContent = credits.pdf_credits;
+            document.getElementById('text-credits').textContent = credits.text_credits;
+            
+            // Afficher un avertissement si crédits bas
+            if (credits.pdf_credits <= 2 || credits.text_credits <= 2) {
+                const creditsDisplay = document.getElementById('credits-display');
+                creditsDisplay.style.background = 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+                creditsDisplay.style.borderColor = '#fbbf24';
+            }
+            
+            // Marquer comme épuisé si 0
+            if (credits.pdf_credits === 0 || credits.text_credits === 0) {
+                const creditsDisplay = document.getElementById('credits-display');
+                creditsDisplay.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+                creditsDisplay.style.borderColor = '#ef4444';
+            }
+        }
+    } catch (error) {
+        console.error('Erreur chargement crédits:', error);
+    }
 }
 
 // === Bouton Rafraîchir les lettres ===
@@ -481,14 +516,16 @@ if (insertBtn) {
                     } else {
                         showStatus('success', 'Lettre générée et téléchargement lancé !');
                     }
-                    // Recharger la liste des lettres
+                    // Recharger la liste des lettres et les crédits
                     loadLettersList();
+                    loadCredits();
                 });
             } else {
                 chrome.tabs.create({ url: downloadUrl });
                 showStatus('success', 'Lettre générée — ouverture du PDF');
-                // Recharger la liste des lettres
+                // Recharger la liste des lettres et les crédits
                 loadLettersList();
+                loadCredits();
             }
         } catch (error) {
             showStatus('error', error.message || 'Erreur lors de la génération');
