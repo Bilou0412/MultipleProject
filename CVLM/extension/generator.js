@@ -500,33 +500,38 @@ if (insertBtn) {
                 chrome.storage.local.set({ lastGeneratedLetter: generated, lastGeneratedUrl: currentUrl });
             }
 
-            const downloadUrl = (data.download_url && data.download_url.startsWith('http')) 
-                ? data.download_url 
-                : `${API_URL}${data.download_url}`;
-
-            if (chrome.downloads && chrome.downloads.download) {
-                chrome.downloads.download({
-                    url: downloadUrl,
-                    filename: `lettre_${data.file_id}.pdf`,
-                    conflictAction: 'overwrite'
-                }, (downloadId) => {
-                    if (chrome.runtime.lastError) {
-                        chrome.tabs.create({ url: downloadUrl });
-                        showStatus('info', 'Génération terminée — ouverture du PDF');
-                    } else {
-                        showStatus('success', 'Lettre générée et téléchargement lancé !');
-                    }
-                    // Recharger la liste des lettres et les crédits
-                    loadLettersList();
-                    loadCredits();
-                });
-            } else {
-                chrome.tabs.create({ url: downloadUrl });
-                showStatus('success', 'Lettre générée — ouverture du PDF');
-                // Recharger la liste des lettres et les crédits
-                loadLettersList();
-                loadCredits();
+            // Télécharger le PDF avec authentification
+            try {
+                const downloadUrl = (data.download_url && data.download_url.startsWith('http')) 
+                    ? data.download_url 
+                    : `${API_URL}${data.download_url}`;
+                
+                const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                const response = await fetch(downloadUrl, { headers });
+                
+                if (!response.ok) {
+                    throw new Error('Erreur de téléchargement');
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `lettre_${data.file_id}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                showStatus('success', 'Lettre générée et téléchargée !');
+            } catch (downloadError) {
+                console.error('Erreur téléchargement:', downloadError);
+                showStatus('warning', 'Lettre générée mais erreur de téléchargement');
             }
+            
+            // Recharger la liste des lettres et les crédits
+            loadLettersList();
+            loadCredits();
         } catch (error) {
             showStatus('error', error.message || 'Erreur lors de la génération');
         } finally {

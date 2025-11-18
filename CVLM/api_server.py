@@ -83,7 +83,7 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = Path("data/output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-storage = {"cvs": {}, "letters": {}}
+# Legacy storage supprimé - PostgreSQL gère maintenant toute la persistance
 
 # === Dependency Injection ===
 
@@ -312,14 +312,6 @@ async def upload_cv(
         # Sauvegarder en base
         cv_repo.create(cv)
         
-        # Legacy storage (pour compatibilité)
-        storage["cvs"][cv_id] = {
-            "path": file_path,
-            "filename": cv_file.filename,
-            "upload_date": datetime.now().isoformat(),
-            "file_size": len(content)
-        }
-        
         return UploadResponse(
             status="success",
             cv_id=cv_id,
@@ -352,19 +344,8 @@ async def list_cvs(
         
         return CvListResponse(status="success", cvs=cv_infos)
     except Exception as e:
-        print(f"⚠️ Erreur PostgreSQL, fallback legacy: {e}")
-        # Fallback legacy
-        cvs = []
-        for cv_id, cv_data in storage["cvs"].items():
-            cv_path = Path(cv_data["path"])
-            if cv_path.exists():
-                cvs.append(CvInfo(
-                    cv_id=cv_id,
-                    filename=cv_data["filename"],
-                    upload_date=cv_data["upload_date"],
-                    file_size=cv_data["file_size"]
-                ))
-        return CvListResponse(status="success", cvs=cvs)
+        print(f"❌ Erreur lors de la récupération des CVs: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération des CVs: {str(e)}")
 
 @app.get("/list-letters")
 async def list_letters(
@@ -432,12 +413,9 @@ async def generate_cover_letter(
             raise HTTPException(status_code=403, detail="Accès interdit à ce CV")
         
         if not cv:
-            # Fallback legacy
-            if cv_id not in storage["cvs"]:
-                raise HTTPException(status_code=404, detail="CV non trouvé")
-            cv_path = Path(storage["cvs"][cv_id]["path"])
-        else:
-            cv_path = Path(cv.file_path)
+            raise HTTPException(status_code=404, detail="CV non trouvé")
+        
+        cv_path = Path(cv.file_path)
         
         if not cv_path.exists():
             raise HTTPException(status_code=404, detail="Fichier CV introuvable")
@@ -514,15 +492,10 @@ async def generate_cover_letter(
             print(f"⚠️ Erreur sauvegarde PostgreSQL: {e}")
             # Continue même si la sauvegarde échoue
         
-        # Stocker dans legacy storage (pour compatibilité)
-        if "letters" not in storage:
-            storage["letters"] = {}
-        storage["letters"][letter_id] = result_path
-        
         return GenerationResponse(
             status="success",
             file_id=letter_id,
-            download_url=f"/download/{letter_id}",
+            download_url=f"/download-letter/{letter_id}",
             letter_text=letter_text
         )
     except HTTPException:
@@ -559,12 +532,9 @@ async def generate_text(
             raise HTTPException(status_code=403, detail="Accès interdit à ce CV")
         
         if not cv:
-            # Fallback vers legacy storage si besoin
-            if data.cv_id not in storage["cvs"]:
-                raise HTTPException(status_code=404, detail="CV non trouvé. Veuillez sélectionner un CV valide.")
-            cv_path = Path(storage["cvs"][data.cv_id]["path"])
-        else:
-            cv_path = Path(cv.file_path)
+            raise HTTPException(status_code=404, detail="CV non trouvé. Veuillez sélectionner un CV valide.")
+        
+        cv_path = Path(cv.file_path)
 
         if not cv_path.exists():
             raise HTTPException(status_code=404, detail="Fichier CV introuvable.")
@@ -600,17 +570,6 @@ async def generate_text(
     except Exception as e:
         print(f"❌ Erreur génération texte: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/download/{file_id}")
-async def download_file(file_id: str):
-    if "letters" not in storage or file_id not in storage["letters"]:
-        raise HTTPException(status_code=404, detail="Fichier non trouvé")
-    
-    file_path = storage["letters"][file_id]
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Le fichier n'existe plus")
-    
-    return FileResponse(path=file_path, filename="lettre_motivation.pdf", media_type="application/pdf")
 
 @app.get("/download-letter/{letter_id}")
 async def download_letter(
@@ -666,21 +625,10 @@ async def cleanup_files(
         
         if cv:
             # Supprimer le fichier physique
-            try:
-                file_storage.delete_cv(cv_id)
-            except:
-                # Si file_storage échoue, essayer legacy
-                if cv_id in storage["cvs"]:
-                    cv_path = Path(storage["cvs"][cv_id]["path"])
-                    if cv_path.exists():
-                        os.remove(cv_path)
+            file_storage.delete_cv(cv_id)
             
             # Supprimer de PostgreSQL
             cv_repo.delete(cv_id)
-        
-        # Supprimer du legacy storage
-        if cv_id in storage["cvs"]:
-            del storage["cvs"][cv_id]
         
         return {"status": "success"}
     except HTTPException:
