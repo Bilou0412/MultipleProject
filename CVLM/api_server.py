@@ -99,11 +99,13 @@ def get_or_create_default_user(db: Session) -> User:
             email="default@cvlm.com",
             google_id="default-google-id",  # ID fictif pour l'utilisateur par défaut
             name="Default User",
+            is_admin=True,  # L'utilisateur par défaut est admin
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
         user_repo.create(user)
-    return user
+    # Toujours recharger depuis la DB pour avoir les dernières données
+    return user_repo.get_by_email("default@cvlm.com")
 
 def get_current_user(
     authorization: Optional[str] = Header(None),
@@ -131,6 +133,20 @@ def get_current_user(
     # Fallback vers utilisateur par défaut
     logger.debug("Utilisation de l'utilisateur par défaut")
     return get_or_create_default_user(db)
+
+def verify_admin(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Vérifie que l'utilisateur actuel a les droits admin
+    Raise HTTPException 403 si l'utilisateur n'est pas admin
+    """
+    if not current_user.is_admin:
+        logger.warning(f"Accès admin refusé pour {current_user.email}")
+        raise HTTPException(
+            status_code=403,
+            detail="Accès refusé : droits administrateur requis"
+        )
+    logger.debug(f"Accès admin autorisé pour {current_user.email}")
+    return current_user
 
 # === Modèles ===
 
@@ -180,6 +196,60 @@ class TextGenerationRequest(BaseModel):
 class TextGenerationResponse(BaseModel):
     status: str
     text: str
+
+class PromoCodeGenerateRequest(BaseModel):
+    pdf_credits: int = 0
+    text_credits: int = 0
+    max_uses: int = 0
+    days_valid: Optional[int] = None
+    custom_code: Optional[str] = None
+
+class PromoCodeResponse(BaseModel):
+    code: str
+    pdf_credits: int
+    text_credits: int
+    max_uses: int
+    current_uses: int
+    is_active: bool
+    expires_at: Optional[str] = None
+
+class PromoCodeRedeemRequest(BaseModel):
+    code: str
+
+class PromoCodeRedeemResponse(BaseModel):
+    status: str
+    message: str
+    pdf_credits_added: int
+    text_credits_added: int
+    new_pdf_credits: int
+    new_text_credits: int
+
+class UserUpdateCreditsRequest(BaseModel):
+    user_id: str
+    pdf_credits: int
+    text_credits: int
+    operation: str  # "add" ou "set"
+
+class UserPromoteRequest(BaseModel):
+    user_id: str
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    pdf_credits: int
+    text_credits: int
+    is_admin: bool
+    created_at: str
+
+class DashboardStatsResponse(BaseModel):
+    total_users: int
+    total_admins: int
+    total_pdf_credits: int
+    total_text_credits: int
+    total_promo_codes: int
+    active_promo_codes: int
+    total_promo_redemptions: int
 
 # === Utilitaires ===
 
@@ -570,10 +640,343 @@ async def cleanup_files(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erreur suppression: {e}")
+        logger.error(f"Erreur suppression: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# === Endpoints Codes Promo ===
+
+@app.post("/promo/generate", response_model=PromoCodeResponse)
+async def generate_promo_code(
+    data: PromoCodeGenerateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Génère un nouveau code promo (réservé aux admins)
+    TODO: Ajouter vérification admin
+    """
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.promo_code_service import PromoCodeService
+        
+        promo_repo = PostgresPromoCodeRepository(db)
+        user_repo = PostgresUserRepository(db)
+        promo_service = PromoCodeService(promo_repo, user_repo)
+        
+        promo_code = promo_service.generate_code(
+            pdf_credits=data.pdf_credits,
+            text_credits=data.text_credits,
+            max_uses=data.max_uses,
+            days_valid=data.days_valid,
+            custom_code=data.custom_code
+        )
+        
+        return PromoCodeResponse(
+            code=promo_code.code,
+            pdf_credits=promo_code.pdf_credits,
+            text_credits=promo_code.text_credits,
+            max_uses=promo_code.max_uses,
+            current_uses=promo_code.current_uses,
+            is_active=promo_code.is_active,
+            expires_at=promo_code.expires_at.isoformat() if promo_code.expires_at else None
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur génération code promo: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la génération du code")
+
+
+@app.post("/promo/redeem", response_model=PromoCodeRedeemResponse)
+async def redeem_promo_code(
+    data: PromoCodeRedeemRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Utilise un code promo pour obtenir des crédits"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.promo_code_service import PromoCodeService
+        
+        promo_repo = PostgresPromoCodeRepository(db)
+        user_repo = PostgresUserRepository(db)
+        promo_service = PromoCodeService(promo_repo, user_repo)
+        
+        pdf_added, text_added = promo_service.redeem_code(data.code, current_user)
+        
+        # Rafraîchir l'utilisateur pour avoir les nouveaux crédits
+        refreshed_user = user_repo.get_by_id(current_user.id)
+        
+        return PromoCodeRedeemResponse(
+            status="success",
+            message=f"Code promo appliqué ! Vous avez reçu {pdf_added} crédits PDF et {text_added} crédits texte.",
+            pdf_credits_added=pdf_added,
+            text_credits_added=text_added,
+            new_pdf_credits=refreshed_user.pdf_credits,
+            new_text_credits=refreshed_user.text_credits
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur utilisation code promo: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de l'utilisation du code")
+
+
+# === Endpoints Admin ===
+
+@app.get("/admin/stats", response_model=DashboardStatsResponse)
+async def get_admin_stats(
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Récupère les statistiques du dashboard admin"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.admin_service import AdminService
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        stats = admin_service.get_dashboard_stats()
+        return DashboardStatsResponse(**stats)
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération stats: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la récupération des statistiques")
+
+
+@app.get("/admin/users", response_model=list[UserResponse])
+async def get_all_users(
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Récupère la liste de tous les utilisateurs"""
+    try:
+        from domain.services.admin_service import AdminService
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        users = admin_service.get_all_users()
+        return [
+            UserResponse(
+                id=user.id,
+                email=user.email,
+                name=user.name,
+                pdf_credits=user.pdf_credits,
+                text_credits=user.text_credits,
+                is_admin=user.is_admin,
+                created_at=user.created_at.isoformat() if user.created_at else ""
+            )
+            for user in users
+        ]
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération utilisateurs: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la récupération des utilisateurs")
+
+
+@app.get("/admin/promo-codes", response_model=list[PromoCodeResponse])
+async def get_all_promo_codes(
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Récupère tous les codes promo"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.admin_service import AdminService
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        promo_codes = admin_service.get_all_promo_codes()
+        return [
+            PromoCodeResponse(
+                code=promo.code,
+                pdf_credits=promo.pdf_credits,
+                text_credits=promo.text_credits,
+                max_uses=promo.max_uses,
+                current_uses=promo.current_uses,
+                is_active=promo.is_active,
+                expires_at=promo.expires_at.isoformat() if promo.expires_at else None
+            )
+            for promo in promo_codes
+        ]
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération codes promo: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la récupération des codes promo")
+
+
+@app.post("/admin/users/promote")
+async def promote_user_to_admin(
+    data: UserPromoteRequest,
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Donne les droits admin à un utilisateur"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.admin_service import AdminService
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        user = admin_service.promote_to_admin(data.user_id)
+        return {
+            "status": "success",
+            "message": f"{user.email} est maintenant administrateur"
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur promotion admin: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la promotion")
+
+
+@app.post("/admin/users/revoke")
+async def revoke_user_admin(
+    data: UserPromoteRequest,
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Retire les droits admin à un utilisateur"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.admin_service import AdminService
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        user = admin_service.revoke_admin(data.user_id)
+        return {
+            "status": "success",
+            "message": f"Droits admin retirés pour {user.email}"
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur révocation admin: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la révocation")
+
+
+@app.post("/admin/users/credits")
+async def update_user_credits(
+    data: UserUpdateCreditsRequest,
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Modifie les crédits d'un utilisateur (add ou set)"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.admin_service import AdminService
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        if data.operation == "add":
+            user = admin_service.add_credits_to_user(data.user_id, data.pdf_credits, data.text_credits)
+            message = f"Crédits ajoutés à {user.email}: +{data.pdf_credits} PDF, +{data.text_credits} texte"
+        elif data.operation == "set":
+            user = admin_service.set_credits(data.user_id, data.pdf_credits, data.text_credits)
+            message = f"Crédits définis pour {user.email}: {data.pdf_credits} PDF, {data.text_credits} texte"
+        else:
+            raise HTTPException(status_code=400, detail="Opération invalide (doit être 'add' ou 'set')")
+        
+        return {
+            "status": "success",
+            "message": message,
+            "pdf_credits": user.pdf_credits,
+            "text_credits": user.text_credits
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur modification crédits: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la modification des crédits")
+
+
+@app.delete("/admin/promo-codes/{code}")
+async def delete_promo_code(
+    code: str,
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Supprime définitivement un code promo"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.admin_service import AdminService
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        admin_service.delete_promo_code(code)
+        return {
+            "status": "success",
+            "message": f"Code promo {code} supprimé"
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur suppression code promo: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la suppression")
+
+
+@app.patch("/admin/promo-codes/{code}/toggle")
+async def toggle_promo_code(
+    code: str,
+    admin: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Active ou désactive un code promo"""
+    try:
+        from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+        from domain.services.admin_service import AdminService
+        
+        user_repo = PostgresUserRepository(db)
+        promo_repo = PostgresPromoCodeRepository(db)
+        admin_service = AdminService(user_repo, promo_repo)
+        
+        promo_code = promo_repo.get_by_code(code.upper())
+        if not promo_code:
+            raise HTTPException(status_code=404, detail=f"Code promo {code} introuvable")
+        
+        if promo_code.is_active:
+            admin_service.deactivate_promo_code(code)
+            message = f"Code promo {code} désactivé"
+        else:
+            admin_service.reactivate_promo_code(code)
+            message = f"Code promo {code} réactivé"
+        
+        return {
+            "status": "success",
+            "message": message
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur toggle code promo: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la modification")
+
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Démarrage de l'API CVLM sur http://localhost:8000")
+    logger.info("Démarrage de l'API CVLM sur http://localhost:8000")
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
+

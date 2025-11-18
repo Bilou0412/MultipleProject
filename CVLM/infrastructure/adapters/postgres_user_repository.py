@@ -39,6 +39,7 @@ class PostgresUserRepository(UserRepository):
             profile_picture_url=model.profile_picture_url,
             pdf_credits=model.pdf_credits,
             text_credits=model.text_credits,
+            is_admin=model.is_admin,
             created_at=model.created_at,
             updated_at=model.updated_at
         )
@@ -53,6 +54,7 @@ class PostgresUserRepository(UserRepository):
             profile_picture_url=user.profile_picture_url,
             pdf_credits=user.pdf_credits,
             text_credits=user.text_credits,
+            is_admin=user.is_admin,
             created_at=user.created_at,
             updated_at=user.updated_at
         )
@@ -159,3 +161,7 @@ class PostgresUserRepository(UserRepository):
         finally:
             if not self._external_session:
                 session.close()
+    
+    def get_all(self) -> List[User]:
+        """Récupère tous les utilisateurs (alias de list_all)"""
+        return self.list_all()

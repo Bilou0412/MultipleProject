@@ -45,3 +45,8 @@ class UserRepository(ABC):
     def list_all(self) -> List[User]:
         """Liste tous les utilisateurs"""
         pass
+    
+    @abstractmethod
+    def get_all(self) -> List[User]:
+        """Récupère tous les utilisateurs (alias de list_all)"""
+        pass

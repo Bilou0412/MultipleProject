@@ -1,7 +1,7 @@
 """
 Configuration de la base de données PostgreSQL avec SQLAlchemy
 """
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -22,6 +22,7 @@ class UserModel(Base):
     # Crédits d'essai (trial credits)
     pdf_credits = Column(Integer, nullable=False, default=10)
     text_credits = Column(Integer, nullable=False, default=10)
+    is_admin = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
@@ -53,6 +54,19 @@ class MotivationalLetterModel(Base):
     llm_provider = Column(String, nullable=False, default='openai')
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+
+class PromoCodeModel(Base):
+    __tablename__ = 'promo_codes'
+    
+    code = Column(String, primary_key=True)
+    pdf_credits = Column(Integer, nullable=False, default=0)
+    text_credits = Column(Integer, nullable=False, default=0)
+    max_uses = Column(Integer, nullable=False, default=0)  # 0 = illimité
+    current_uses = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
 
 
 # Configuration de la connexion

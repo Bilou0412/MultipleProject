@@ -22,6 +22,7 @@ class User:
     # Crédits d'essai (trial credits)
     pdf_credits: int = 10  # Nombre de lettres PDF générables
     text_credits: int = 10  # Nombre de générations de texte
+    is_admin: bool = False  # Droit administrateur pour gérer les codes promo et utilisateurs
     
     def __post_init__(self):
         if self.created_at is None:

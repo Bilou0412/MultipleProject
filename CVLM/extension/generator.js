@@ -57,6 +57,9 @@ function showMainApp() {
         userAvatar.src = currentUser.picture || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Cpath fill="%232563eb" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/%3E%3C/svg%3E';
     }
     
+    // Vérifier si l'utilisateur est admin et afficher le bouton
+    checkAdminAccess();
+    
     // Charger le reste de l'interface
     init();
 }
@@ -127,6 +130,35 @@ signoutBtn.addEventListener('click', async () => {
     selectedCvId = null;
     
     showAuthSection();
+});
+
+// Vérification accès admin
+async function checkAdminAccess() {
+    const adminBtn = document.getElementById('admin-btn');
+    
+    if (!authToken) {
+        return;
+    }
+    
+    try {
+        // Tester l'accès à l'endpoint admin stats
+        const response = await fetch(`${API_URL}/admin/stats`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+            // L'utilisateur est admin, afficher le bouton
+            adminBtn.classList.add('show');
+        }
+    } catch (error) {
+        console.log('Utilisateur non-admin ou erreur:', error);
+    }
+}
+
+// Gérer le clic sur le bouton admin
+document.getElementById('admin-btn').addEventListener('click', () => {
+    // Ouvrir le dashboard admin dans un nouvel onglet
+    chrome.tabs.create({ url: chrome.runtime.getURL('admin.html') });
 });
 
 // === Initialisation principale ===
@@ -586,6 +618,79 @@ function showStatus(type, message) {
 
 function hideStatus() {
     statusDiv.style.display = 'none';
+}
+
+// === Code Promo ===
+
+const promoCodeInput = document.getElementById('promo-code-input');
+const applyPromoBtn = document.getElementById('apply-promo-btn');
+const promoMessage = document.getElementById('promo-message');
+
+applyPromoBtn.addEventListener('click', async () => {
+    const code = promoCodeInput.value.trim().toUpperCase();
+    
+    if (!code) {
+        showPromoMessage('error', 'Veuillez entrer un code promo');
+        return;
+    }
+    
+    try {
+        applyPromoBtn.disabled = true;
+        applyPromoBtn.textContent = '⏳';
+        
+        const headers = authToken ? { 
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+        } : { 'Content-Type': 'application/json' };
+        
+        const response = await fetch(`${API_URL}/promo/redeem`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ code })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.detail || 'Code invalide');
+        }
+        
+        // Afficher le message de succès
+        showPromoMessage('success', data.message);
+        promoCodeInput.value = '';
+        
+        // Recharger les crédits
+        await loadCredits();
+        
+        // Masquer le message après 5 secondes
+        setTimeout(() => {
+            promoMessage.style.display = 'none';
+        }, 5000);
+        
+    } catch (error) {
+        showPromoMessage('error', error.message);
+    } finally {
+        applyPromoBtn.disabled = false;
+        applyPromoBtn.textContent = 'Appliquer';
+    }
+});
+
+function showPromoMessage(type, message) {
+    promoMessage.textContent = message;
+    promoMessage.style.display = 'block';
+    promoMessage.style.padding = '8px';
+    promoMessage.style.borderRadius = '4px';
+    promoMessage.style.fontWeight = '600';
+    
+    if (type === 'success') {
+        promoMessage.style.background = '#d1fae5';
+        promoMessage.style.color = '#065f46';
+        promoMessage.style.border = '1px solid #10b981';
+    } else {
+        promoMessage.style.background = '#fee2e2';
+        promoMessage.style.color = '#991b1b';
+        promoMessage.style.border = '1px solid #ef4444';
+    }
 }
 
 // === Démarrage ===
