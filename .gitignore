@@ -1,2 +1,37 @@
+# Backups
 *.tar.gz
 CVLM-backup-*.tar.gz
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker volumes (fichiers de données locales)
+CVLM/data/files/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+CVLM/data/temp/
+CVLM/data/output/
