@@ -148,11 +148,11 @@ function renderUsers() {
             </td>
             <td>
                 ${!user.is_admin ? `
-                    <button class="btn-warning" onclick="promoteUser('${user.id}')">↗️ Promouvoir</button>
+                    <button class="btn-warning" data-action="promote" data-user-id="${user.id}">↗️ Promouvoir</button>
                 ` : `
-                    <button class="btn-danger" onclick="revokeAdmin('${user.id}')">↙️ Rétrograder</button>
+                    <button class="btn-danger" data-action="revoke" data-user-id="${user.id}">↙️ Rétrograder</button>
                 `}
-                <button class="btn-success" onclick="showEditCredits('${user.id}')">💰 Crédits</button>
+                <button class="btn-success" data-action="edit-credits" data-user-id="${user.id}">💰 Crédits</button>
             </td>
         </tr>
     `).join('');
@@ -200,10 +200,10 @@ function renderPromoCodes() {
             </td>
             <td>${promo.expires_at ? new Date(promo.expires_at).toLocaleDateString('fr-FR') : 'Jamais'}</td>
             <td>
-                <button class="btn-warning" onclick="togglePromoCode('${promo.code}')">
+                <button class="btn-warning" data-action="toggle-promo" data-code="${promo.code}">
                     ${promo.is_active ? '⏸️ Désactiver' : '▶️ Activer'}
                 </button>
-                <button class="btn-danger" onclick="deletePromoCode('${promo.code}')">🗑️</button>
+                <button class="btn-danger" data-action="delete-promo" data-code="${promo.code}">🗑️</button>
             </td>
         </tr>
     `).join('');
@@ -225,6 +225,41 @@ function setupEventListeners() {
             document.getElementById(`tab-${tabName}`).classList.add('active');
         });
     });
+    
+    // Délégation d'événements pour les boutons de la table utilisateurs
+    document.getElementById('users-tbody').addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+        
+        const action = button.dataset.action;
+        const userId = button.dataset.userId;
+        
+        if (action === 'promote') {
+            promoteUser(userId);
+        } else if (action === 'revoke') {
+            revokeAdmin(userId);
+        } else if (action === 'edit-credits') {
+            showEditCredits(userId);
+        }
+    });
+    
+    // Délégation d'événements pour les boutons de la table codes promo
+    document.getElementById('promo-codes-tbody').addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+        
+        const action = button.dataset.action;
+        const code = button.dataset.code;
+        
+        if (action === 'toggle-promo') {
+            togglePromoCode(code);
+        } else if (action === 'delete-promo') {
+            deletePromoCode(code);
+        }
+    });
+    
+    // Bouton créer code promo
+    document.getElementById('create-promo-btn').addEventListener('click', createPromoCode);
 }
 
 // Promouvoir utilisateur
