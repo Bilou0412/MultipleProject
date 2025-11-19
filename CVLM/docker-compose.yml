@@ -35,16 +35,21 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - FILE_STORAGE_BASE_PATH=/app/data/files
     volumes:
       - ./data/files:/app/data/files
       - ./logs:/app/logs
+      - ./api:/app/api
+      - ./domain:/app/domain
+      - ./infrastructure:/app/infrastructure
+      - ./config:/app/config
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - cvlm_network
-    command: uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
   # PgAdmin (optionnel - pour l'administration de la DB)
   pgadmin:

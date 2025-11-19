@@ -45,13 +45,23 @@ async def auth_google(
             )
         
         # Créer un token JWT pour notre API
-        access_token = create_access_token({"user_id": user.id})
+        access_token = create_access_token(user.id, user.email)
         
         logger.info(f"Utilisateur authentifié: {user.email}")
         
         return AuthTokenResponse(
             access_token=access_token,
-            token_type="bearer"
+            token_type="bearer",
+            user=UserResponse(
+                id=user.id,
+                email=user.email,
+                name=user.name,
+                picture=user.profile_picture_url,
+                pdf_credits=user.pdf_credits,
+                text_credits=user.text_credits,
+                is_admin=user.is_admin,
+                created_at=user.created_at.isoformat()
+            )
         )
         
     except HTTPException:

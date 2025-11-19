@@ -9,11 +9,6 @@ class AuthTokenRequest(BaseModel):
     token: str
 
 
-class AuthTokenResponse(BaseModel):
-    access_token: str
-    token_type: str
-
-
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -23,3 +18,9 @@ class UserResponse(BaseModel):
     text_credits: int
     is_admin: bool
     created_at: str
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserResponse

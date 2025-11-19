@@ -23,9 +23,11 @@ from infrastructure.adapters.postgres_user_repository import PostgresUserReposit
 from infrastructure.adapters.pypdf_parse import PyPdfParser
 from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
 from infrastructure.adapters.open_ai_api import OpenAiLlm
-from infrastructure.adapters.Google_gemini_api import GoogleGeminiLlm
+from infrastructure.adapters.google_gemini_api import GoogleGeminiLlm
 from config.constants import LLM_PROVIDER_GEMINI, TEXT_TYPE_WHY_JOIN
-from config.logger_config import logger
+from infrastructure.adapters.logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 
 router = APIRouter(prefix="", tags=["generation"])

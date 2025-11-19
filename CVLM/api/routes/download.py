@@ -17,7 +17,9 @@ from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
 from infrastructure.adapters.postgres_motivational_letter_repository import PostgresMotivationalLetterRepository
 from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
 from infrastructure.adapters.local_file_storage import LocalFileStorage
-from config.logger_config import logger
+from infrastructure.adapters.logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 
 router = APIRouter(prefix="", tags=["download"])

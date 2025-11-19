@@ -84,7 +84,7 @@ googleSigninBtn.addEventListener('click', async () => {
         const response = await fetch(`${API_URL}/auth/google`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ google_token: token })
+            body: JSON.stringify({ token: token })
         });
         
         if (!response.ok) {

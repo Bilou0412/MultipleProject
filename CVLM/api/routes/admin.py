@@ -24,7 +24,9 @@ from infrastructure.adapters.postgres_user_repository import PostgresUserReposit
 from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
 from domain.services.admin_service import AdminService
 from domain.services.promo_code_service import PromoCodeService
-from config.logger_config import logger
+from infrastructure.adapters.logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -92,6 +94,7 @@ async def get_all_users(
                 id=user.id,
                 email=user.email,
                 name=user.name,
+                picture=user.profile_picture_url,
                 pdf_credits=user.pdf_credits,
                 text_credits=user.text_credits,
                 is_admin=user.is_admin,

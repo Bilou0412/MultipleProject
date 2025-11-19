@@ -15,7 +15,9 @@ from api.models.history import HistoryListResponse, HistoryStatsResponse, Histor
 from domain.entities.user import User
 from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
 from domain.services.generation_history_service import GenerationHistoryService
-from config.logger_config import logger
+from infrastructure.adapters.logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 
 router = APIRouter(prefix="/user/history", tags=["history"])

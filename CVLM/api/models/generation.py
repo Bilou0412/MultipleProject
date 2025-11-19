@@ -16,6 +16,7 @@ class TextGenerationRequest(BaseModel):
     cv_id: str
     job_url: str
     text_type: str = "why_join"
+    llm_provider: str = "openai"  # openai ou gemini
 
 
 class TextGenerationResponse(BaseModel):
