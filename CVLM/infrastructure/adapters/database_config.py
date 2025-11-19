@@ -6,6 +6,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
+from infrastructure.adapters.logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 # Base pour les modèles SQLAlchemy
 Base = declarative_base()
@@ -69,6 +72,33 @@ class PromoCodeModel(Base):
     expires_at = Column(DateTime, nullable=True)
 
 
+class GenerationHistoryModel(Base):
+    __tablename__ = 'generation_history'
+    
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    type = Column(String(10), nullable=False)  # 'pdf' ou 'text'
+    
+    # Informations sur l'offre
+    job_title = Column(String(500), nullable=True)
+    company_name = Column(String(200), nullable=True)
+    job_url = Column(Text, nullable=True)
+    
+    # Informations sur la génération
+    cv_filename = Column(String(255), nullable=True)
+    cv_id = Column(String, nullable=True)
+    file_path = Column(String(500), nullable=True)  # NULL si expiré
+    text_content = Column(Text, nullable=True)
+    
+    # Statut
+    status = Column(String(20), nullable=False, default='success')
+    error_message = Column(Text, nullable=True)
+    
+    # Dates
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    file_expires_at = Column(DateTime, nullable=True, index=True)
+
+
 # Configuration de la connexion
 def get_database_url():
     """
@@ -110,11 +140,11 @@ def init_database():
     """Initialise la base de données (crée les tables)"""
     engine = create_db_engine()
     Base.metadata.create_all(engine)
-    print("✅ Base de données initialisée avec succès")
+    logger.info("Base de données initialisée avec succès")
 
 
 def drop_all_tables():
     """Supprime toutes les tables (utile pour les tests)"""
     engine = create_db_engine()
     Base.metadata.drop_all(engine)
-    print("⚠️ Toutes les tables ont été supprimées")
+    logger.warning("Toutes les tables ont été supprimées")

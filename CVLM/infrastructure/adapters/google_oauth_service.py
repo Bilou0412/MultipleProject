@@ -9,6 +9,9 @@ from uuid import uuid4
 
 from domain.entities.user import User
 from domain.ports.user_repository import UserRepository
+from infrastructure.adapters.logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class GoogleOAuthService:
@@ -40,7 +43,7 @@ class GoogleOAuthService:
                 )
                 
                 if response.status_code != 200:
-                    print(f"⚠️ Erreur Google API: {response.status_code} - {response.text}")
+                    logger.warning(f"Erreur Google API: {response.status_code} - {response.text}")
                     return None
                 
                 user_info = response.json()
@@ -54,7 +57,7 @@ class GoogleOAuthService:
                 }
             
         except Exception as e:
-            print(f"❌ Erreur validation token Google: {e}")
+            logger.error(f"Erreur validation token Google: {e}")
             return None
     
     async def authenticate_user(self, google_token: str) -> Optional[User]:
@@ -75,7 +78,7 @@ class GoogleOAuthService:
         
         # Vérifier si l'email est vérifié
         if not google_info.get('email_verified', False):
-            print(f"⚠️ Email non vérifié pour {google_info['email']}")
+            logger.warning(f"Email non vérifié pour {google_info['email']}")
             return None
         
         # Chercher l'utilisateur par google_id
@@ -86,7 +89,7 @@ class GoogleOAuthService:
             user.updated_at = datetime.utcnow()
             user.profile_picture_url = google_info.get('picture')
             self.user_repository.update(user)
-            print(f"✅ Utilisateur existant connecté: {user.email}")
+            logger.info(f"Utilisateur existant connecté: {user.email}")
             return user
         
         # Vérifier si un utilisateur existe déjà avec cet email
@@ -98,7 +101,7 @@ class GoogleOAuthService:
             user.updated_at = datetime.utcnow()
             user.profile_picture_url = google_info.get('picture')
             self.user_repository.update(user)
-            print(f"✅ Google ID associé à l'utilisateur existant: {user.email}")
+            logger.info(f"Google ID associé à l'utilisateur existant: {user.email}")
             return user
         
         # Créer un nouvel utilisateur
@@ -113,7 +116,7 @@ class GoogleOAuthService:
         )
         
         self.user_repository.create(new_user)
-        print(f"✅ Nouvel utilisateur créé: {new_user.email}")
+        logger.info(f"Nouvel utilisateur créé: {new_user.email}")
         return new_user
     
     def get_user_by_id(self, user_id: str) -> Optional[User]:

@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uuid
-from typing import Optional
+from typing import Optional, List
 from pathlib import Path
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -67,6 +67,34 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Erreur initialisation DB: {e}")
         raise
+
+# === Exception Handlers ===
+
+@app.exception_handler(Exception)
+async def business_exception_handler(request: Request, exc: Exception):
+    """Convertit les exceptions métier en HTTPException"""
+    from domain.exceptions import (
+        InsufficientCreditsError,
+        ResourceNotFoundError,
+        UnauthorizedAccessError,
+        FileValidationError,
+        PromoCodeError
+    )
+    
+    # Exceptions métier → HTTPException
+    if isinstance(exc, InsufficientCreditsError):
+        raise HTTPException(status_code=403, detail=exc.message)
+    elif isinstance(exc, ResourceNotFoundError):
+        raise HTTPException(status_code=404, detail=exc.message)
+    elif isinstance(exc, UnauthorizedAccessError):
+        raise HTTPException(status_code=403, detail=exc.message)
+    elif isinstance(exc, FileValidationError):
+        raise HTTPException(status_code=400, detail=exc.message)
+    elif isinstance(exc, PromoCodeError):
+        raise HTTPException(status_code=400, detail=exc.message)
+    
+    # Laisser passer les autres exceptions
+    raise exc
 
 # Storage et répertoires
 file_storage = LocalFileStorage(base_path=FILE_STORAGE_BASE_PATH)
@@ -251,6 +279,42 @@ class DashboardStatsResponse(BaseModel):
     active_promo_codes: int
     total_promo_redemptions: int
 
+class HistoryEntryResponse(BaseModel):
+    id: str
+    type: str
+    job_title: Optional[str]
+    company_name: Optional[str]
+    job_url: Optional[str]
+    cv_filename: Optional[str]
+    status: str
+    created_at: str
+    is_downloadable: bool
+    is_expired: bool
+    days_until_expiration: Optional[int]
+
+class HistoryListResponse(BaseModel):
+    total: int
+    page: int
+    per_page: int
+    pages: int
+    items: List[HistoryEntryResponse]
+
+class HistoryStatsResponse(BaseModel):
+    total: int
+    pdf_count: int
+    text_count: int
+    success_rate: float
+    this_month: int
+    last_generation: Optional[str]
+    unique_companies: int
+
+class HistoryTextResponse(BaseModel):
+    id: str
+    text_content: str
+    job_title: Optional[str]
+    company_name: Optional[str]
+    created_at: str
+
 # === Utilitaires ===
 
 def extract_text_from_pdf(pdf_path: str) -> str:
@@ -262,7 +326,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
                 text += page.extract_text() + "\n"
             return text.strip()
     except Exception as e:
-        print(f"⚠️ Erreur extraction PDF: {e}")
+        logger.warning(f"Erreur extraction PDF: {e}")
         return ""
 
 # === Endpoints ===
@@ -318,7 +382,7 @@ async def auth_google(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erreur auth Google: {e}")
+        logger.error(f"Erreur auth Google: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/auth/me", response_model=UserResponse)
@@ -338,14 +402,32 @@ async def upload_cv(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # ✅ Validation du fichier
+    from config.constants import (
+        MAX_FILE_SIZE, 
+        ALLOWED_MIME_TYPES, 
+        ERROR_FILE_TOO_LARGE, 
+        ERROR_INVALID_FILE_TYPE
+    )
+    
+    # Validation extension
     if not cv_file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Le fichier doit être au format PDF")
+        raise HTTPException(status_code=400, detail=ERROR_INVALID_FILE_TYPE)
     
     try:
         cv_repo = PostgresCvRepository(db)
         document_parser = PyPdfParser()
         
         content = await cv_file.read()
+        
+        # ✅ Validation taille
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=ERROR_FILE_TOO_LARGE)
+        
+        # ✅ Validation type MIME
+        if cv_file.content_type and cv_file.content_type not in ALLOWED_MIME_TYPES:
+            raise HTTPException(status_code=400, detail=ERROR_INVALID_FILE_TYPE)
+        
         cv_id = str(uuid.uuid4())
         
         # Sauvegarder le fichier
@@ -355,7 +437,7 @@ async def upload_cv(
         try:
             raw_text = document_parser.parse_document(input_path=file_path)
         except Exception as e:
-            print(f"⚠️ Erreur extraction texte: {e}")
+            logger.warning(f"Erreur extraction texte: {e}")
             raw_text = ""
         
         # Créer l'entité CV pour l'utilisateur connecté
@@ -379,7 +461,7 @@ async def upload_cv(
             filename=cv_file.filename
         )
     except Exception as e:
-        print(f"❌ Erreur upload: {e}")
+        logger.error(f"Erreur upload: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload: {str(e)}")
 
 @app.get("/list-cvs", response_model=CvListResponse)
@@ -405,7 +487,7 @@ async def list_cvs(
         
         return CvListResponse(status="success", cvs=cv_infos)
     except Exception as e:
-        print(f"❌ Erreur lors de la récupération des CVs: {e}")
+        logger.error(f"Erreur lors de la récupération des CVs: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération des CVs: {str(e)}")
 
 @app.get("/list-letters")
@@ -445,7 +527,7 @@ async def list_letters(
             "total": len(letter_infos)
         }
     except Exception as e:
-        print(f"❌ Erreur liste lettres: {e}")
+        logger.error(f"Erreur liste lettres: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération des lettres: {str(e)}")
 
 @app.post("/generate-cover-letter", response_model=GenerationResponse)
@@ -496,6 +578,41 @@ async def generate_cover_letter(
             
         except Exception as e:
             logger.warning(f"Erreur sauvegarde lettre en base: {e}")
+        
+        # Enregistrer dans l'historique
+        try:
+            from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+            from domain.services.generation_history_service import GenerationHistoryService
+            
+            history_repo = PostgresGenerationHistoryRepository(db)
+            history_service = GenerationHistoryService(history_repo)
+            
+            # Extraire les infos de l'offre (simple parsing du job_url pour l'instant)
+            company_name = None
+            job_title = None
+            try:
+                if 'welcometothejungle' in job_url:
+                    parts = job_url.split('/')
+                    if len(parts) >= 6:
+                        company_name = parts[4].replace('-', ' ').title()
+                        job_title = parts[6].split('?')[0].replace('-', ' ').title()
+            except Exception:
+                pass
+            
+            history_service.record_generation(
+                user_id=current_user.id,
+                gen_type='pdf',
+                job_title=job_title,
+                company_name=company_name,
+                job_url=job_url,
+                cv_filename=cv.filename,
+                cv_id=cv_id,
+                file_path=pdf_path,
+                status='success'
+            )
+            
+        except Exception as e:
+            logger.warning(f"Erreur enregistrement historique: {e}")
         
         return GenerationResponse(
             status="success",
@@ -553,6 +670,41 @@ async def generate_text(
         # Générer
         generated_text = llm.send_to_llm(prompt)
         logger.info(f"Texte généré pour {current_user.email}")
+        
+        # Enregistrer dans l'historique
+        try:
+            from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+            from domain.services.generation_history_service import GenerationHistoryService
+            
+            history_repo = PostgresGenerationHistoryRepository(db)
+            history_service = GenerationHistoryService(history_repo)
+            
+            # Extraire les infos de l'offre
+            company_name = None
+            job_title = None
+            try:
+                if 'welcometothejungle' in data.job_url:
+                    parts = data.job_url.split('/')
+                    if len(parts) >= 6:
+                        company_name = parts[4].replace('-', ' ').title()
+                        job_title = parts[6].split('?')[0].replace('-', ' ').title()
+            except Exception:
+                pass
+            
+            history_service.record_generation(
+                user_id=current_user.id,
+                gen_type='text',
+                job_title=job_title,
+                company_name=company_name,
+                job_url=data.job_url,
+                cv_filename=cv.filename,
+                cv_id=data.cv_id,
+                text_content=generated_text,
+                status='success'
+            )
+            
+        except Exception as e:
+            logger.warning(f"Erreur enregistrement historique: {e}")
         
         return TextGenerationResponse(status="success", text=generated_text)
         
@@ -973,6 +1125,262 @@ async def toggle_promo_code(
     except Exception as e:
         logger.error(f"Erreur toggle code promo: {e}")
         raise HTTPException(status_code=500, detail="Erreur lors de la modification")
+
+
+# === Endpoints Historique ===
+
+@app.get("/user/history", response_model=HistoryListResponse)
+async def get_user_history(
+    page: int = 1,
+    per_page: int = 50,
+    search: Optional[str] = None,
+    type_filter: Optional[str] = None,
+    period: Optional[str] = None,  # '7', '30', '90', 'all'
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupère l'historique des générations de l'utilisateur"""
+    try:
+        from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+        from domain.services.generation_history_service import GenerationHistoryService
+        
+        history_repo = PostgresGenerationHistoryRepository(db)
+        history_service = GenerationHistoryService(history_repo)
+        
+        # Convertir période en jours
+        period_days = None
+        if period and period != 'all':
+            try:
+                period_days = int(period)
+            except ValueError:
+                pass
+        
+        result = history_service.get_user_history(
+            user_id=current_user.id,
+            page=page,
+            per_page=per_page,
+            search=search,
+            type_filter=type_filter,
+            period_days=period_days
+        )
+        
+        # Formater les items
+        items = [
+            HistoryEntryResponse(
+                id=item.id,
+                type=item.type,
+                job_title=item.job_title,
+                company_name=item.company_name,
+                job_url=item.job_url,
+                cv_filename=item.cv_filename,
+                status=item.status,
+                created_at=item.created_at.isoformat() if item.created_at else "",
+                is_downloadable=item.is_downloadable(),
+                is_expired=item.is_file_expired(),
+                days_until_expiration=item.days_until_expiration()
+            )
+            for item in result["items"]
+        ]
+        
+        return HistoryListResponse(
+            total=result["total"],
+            page=result["page"],
+            per_page=result["per_page"],
+            pages=result["pages"],
+            items=items
+        )
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération historique: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la récupération de l'historique")
+
+
+@app.get("/user/history/stats", response_model=HistoryStatsResponse)
+async def get_user_history_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupère les statistiques de l'utilisateur"""
+    try:
+        from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+        from domain.services.generation_history_service import GenerationHistoryService
+        
+        history_repo = PostgresGenerationHistoryRepository(db)
+        history_service = GenerationHistoryService(history_repo)
+        
+        stats = history_service.get_user_stats(current_user.id)
+        
+        return HistoryStatsResponse(
+            total=stats["total"],
+            pdf_count=stats["pdf_count"],
+            text_count=stats["text_count"],
+            success_rate=stats["success_rate"],
+            this_month=stats["this_month"],
+            last_generation=stats["last_generation"].isoformat() if stats["last_generation"] else None,
+            unique_companies=stats["unique_companies"]
+        )
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération stats: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la récupération des statistiques")
+
+
+@app.get("/user/history/{history_id}/download")
+async def download_history_file(
+    history_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Télécharge un fichier PDF depuis l'historique"""
+    try:
+        from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+        
+        history_repo = PostgresGenerationHistoryRepository(db)
+        history = history_repo.get_by_id(history_id)
+        
+        if not history:
+            raise HTTPException(status_code=404, detail="Entrée introuvable")
+        
+        if history.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Accès refusé")
+        
+        if not history.is_downloadable():
+            raise HTTPException(status_code=410, detail="Fichier expiré ou indisponible")
+        
+        import os
+        if not os.path.exists(history.file_path):
+            raise HTTPException(status_code=404, detail="Fichier physique introuvable")
+        
+        # Construire un nom de fichier propre
+        parts = []
+        if history.company_name and history.company_name.strip():
+            parts.append(history.company_name.strip())
+        if history.job_title and history.job_title.strip():
+            parts.append(history.job_title.strip())
+        
+        if parts:
+            filename = '_'.join(parts)
+        else:
+            filename = 'lettre_motivation'
+        
+        # Nettoyer le nom de fichier
+        filename = filename.replace(' ', '_').replace('/', '_')
+        # Supprimer les underscores multiples
+        while '__' in filename:
+            filename = filename.replace('__', '_')
+        # Supprimer les underscores au début et à la fin
+        filename = filename.strip('_')
+        # Ajouter l'extension
+        filename = filename + '.pdf'
+        
+        logger.info(f"Téléchargement historique: filename='{filename}', company='{history.company_name}', job='{history.job_title}'")
+        
+        return FileResponse(
+            path=history.file_path,
+            filename=filename,
+            media_type='application/pdf'
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur téléchargement fichier: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors du téléchargement")
+
+
+@app.get("/user/history/{history_id}/text", response_model=HistoryTextResponse)
+async def get_history_text(
+    history_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupère le contenu texte d'une génération"""
+    try:
+        from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+        
+        history_repo = PostgresGenerationHistoryRepository(db)
+        history = history_repo.get_by_id(history_id)
+        
+        if not history:
+            raise HTTPException(status_code=404, detail="Entrée introuvable")
+        
+        if history.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Accès refusé")
+        
+        if history.type != 'text':
+            raise HTTPException(status_code=400, detail="Cette entrée n'est pas de type texte")
+        
+        return HistoryTextResponse(
+            id=history.id,
+            text_content=history.text_content or "",
+            job_title=history.job_title,
+            company_name=history.company_name,
+            created_at=history.created_at.isoformat() if history.created_at else ""
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur récupération texte: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la récupération du texte")
+
+
+@app.delete("/user/history/{history_id}")
+async def delete_history_entry(
+    history_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Supprime une entrée de l'historique"""
+    try:
+        from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+        from domain.services.generation_history_service import GenerationHistoryService
+        
+        history_repo = PostgresGenerationHistoryRepository(db)
+        history_service = GenerationHistoryService(history_repo)
+        
+        history_service.delete_entry(history_id, current_user.id)
+        
+        return {
+            "status": "success",
+            "message": "Entrée supprimée avec succès"
+        }
+        
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur suppression historique: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la suppression")
+
+
+@app.get("/user/history/export")
+async def export_user_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Exporte tout l'historique de l'utilisateur en JSON"""
+    try:
+        from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
+        from domain.services.generation_history_service import GenerationHistoryService
+        
+        history_repo = PostgresGenerationHistoryRepository(db)
+        history_service = GenerationHistoryService(history_repo)
+        
+        export_data = history_service.export_user_history(current_user.id)
+        
+        return Response(
+            content=str(export_data),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename=cvlm_history_{datetime.now().strftime('%Y%m%d')}.json"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Erreur export historique: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de l'export")
 
 
 if __name__ == "__main__":

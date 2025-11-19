@@ -8,6 +8,15 @@ import os
 DEFAULT_PDF_CREDITS = 10
 DEFAULT_TEXT_CREDITS = 10
 
+# File Upload Validation
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_MIME_TYPES = ["application/pdf"]
+ALLOWED_FILE_EXTENSIONS = [".pdf"]
+
+# Pagination
+HISTORY_PAGINATION_DEFAULT = 50
+HISTORY_PAGINATION_MAX = 100
+
 # File Storage
 FILE_STORAGE_BASE_PATH = os.getenv("FILE_STORAGE_BASE_PATH", "data/files")
 TEMP_DIR = Path("data/temp")
@@ -32,6 +41,8 @@ ERROR_CV_FILE_NOT_FOUND = "Fichier CV introuvable"
 ERROR_CV_ACCESS_DENIED = "Accès interdit à ce CV"
 ERROR_LETTER_NOT_FOUND = "Lettre non trouvée"
 ERROR_LETTER_ACCESS_DENIED = "Accès interdit à cette lettre"
+ERROR_FILE_TOO_LARGE = f"Fichier trop volumineux. Taille maximale: {MAX_FILE_SIZE // (1024 * 1024)} MB"
+ERROR_INVALID_FILE_TYPE = f"Type de fichier invalide. Types acceptés: {', '.join(ALLOWED_FILE_EXTENSIONS)}"
 
 # CORS Origins
 CORS_ALLOWED_ORIGINS = [

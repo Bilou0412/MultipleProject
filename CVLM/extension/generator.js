@@ -155,11 +155,23 @@ async function checkAdminAccess() {
     }
 }
 
+// Gérer le clic sur le bouton historique
+const historyBtn = document.getElementById('history-btn');
+if (historyBtn) {
+    historyBtn.addEventListener('click', () => {
+        // Ouvrir l'historique dans un nouvel onglet
+        chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
+    });
+}
+
 // Gérer le clic sur le bouton admin
-document.getElementById('admin-btn').addEventListener('click', () => {
-    // Ouvrir le dashboard admin dans un nouvel onglet
-    chrome.tabs.create({ url: chrome.runtime.getURL('admin.html') });
-});
+const adminBtn = document.getElementById('admin-btn');
+if (adminBtn) {
+    adminBtn.addEventListener('click', () => {
+        // Ouvrir le dashboard admin dans un nouvel onglet
+        chrome.tabs.create({ url: chrome.runtime.getURL('admin.html') });
+    });
+}
 
 // === Initialisation principale ===
 
@@ -187,7 +199,8 @@ async function init() {
     loadPreferences();
     await loadCredits(); // Charger les crédits
     await loadCvList();
-    await loadLettersList();
+    // La liste des lettres est maintenant accessible via le bouton "📜 Historique"
+    // await loadLettersList();
 }
 
 // === Charger les crédits utilisateur ===
@@ -223,18 +236,7 @@ async function loadCredits() {
     }
 }
 
-// === Bouton Rafraîchir les lettres ===
-
-if (refreshLettersBtn) {
-    refreshLettersBtn.addEventListener('click', async () => {
-        refreshLettersBtn.style.animation = 'spin 0.5s linear';
-        await loadLettersList();
-        setTimeout(() => {
-            refreshLettersBtn.style.animation = '';
-        }, 500);
-    });
-}
-
+// === Gestion du CV ===
 // === Upload CV ===
 
 cvFileInput.addEventListener('change', async (e) => {
@@ -561,8 +563,7 @@ if (insertBtn) {
                 showStatus('warning', 'Lettre générée mais erreur de téléchargement');
             }
             
-            // Recharger la liste des lettres et les crédits
-            loadLettersList();
+            // Recharger les crédits (l'historique est accessible via le bouton dédié)
             loadCredits();
         } catch (error) {
             showStatus('error', error.message || 'Erreur lors de la génération');

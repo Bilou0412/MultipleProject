@@ -10,7 +10,9 @@ import os
 
 from domain.entities.user import User
 from domain.ports.user_repository import UserRepository
+from infrastructure.adapters.logger_config import setup_logger
 
+logger = setup_logger(__name__)
 
 # Configuration JWT
 SECRET_KEY = os.getenv("JWT_SECRET", "change-this-secret-key-in-production")
@@ -58,7 +60,7 @@ def decode_access_token(token: str) -> Optional[dict]:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError as e:
-        print(f"⚠️ Erreur décodage JWT: {e}")
+        logger.warning(f"Erreur décodage JWT: {e}")
         return None
 
 

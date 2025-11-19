@@ -1,10 +1,9 @@
 """
 Service de gestion des crédits utilisateur
 """
-from fastapi import HTTPException
-
 from domain.entities.user import User
 from domain.ports.user_repository import UserRepository
+from domain.exceptions import InsufficientCreditsError
 from infrastructure.adapters.logger_config import setup_logger
 from config.constants import ERROR_NO_PDF_CREDITS, ERROR_NO_TEXT_CREDITS
 
@@ -22,11 +21,11 @@ class CreditService:
         Vérifie et utilise un crédit PDF
         
         Raises:
-            HTTPException: Si l'utilisateur n'a plus de crédits
+            InsufficientCreditsError: Si l'utilisateur n'a plus de crédits
         """
         if not user.has_pdf_credits():
             logger.warning(f"Utilisateur {user.email} sans crédits PDF")
-            raise HTTPException(status_code=403, detail=ERROR_NO_PDF_CREDITS)
+            raise InsufficientCreditsError("PDF", ERROR_NO_PDF_CREDITS)
         
         user.use_pdf_credit()
         self.user_repository.update(user)
@@ -37,12 +36,13 @@ class CreditService:
         Vérifie et utilise un crédit texte
         
         Raises:
-            HTTPException: Si l'utilisateur n'a plus de crédits
+            InsufficientCreditsError: Si l'utilisateur n'a plus de crédits
         """
         if not user.has_text_credits():
             logger.warning(f"Utilisateur {user.email} sans crédits texte")
-            raise HTTPException(status_code=403, detail=ERROR_NO_TEXT_CREDITS)
+            raise InsufficientCreditsError("text", ERROR_NO_TEXT_CREDITS)
         
         user.use_text_credit()
         self.user_repository.update(user)
         logger.info(f"Crédit texte utilisé pour {user.email}. Restants: {user.text_credits}")
+

@@ -611,6 +611,9 @@
                     </div>
                 </div>
                 <div style="display: flex; gap: 8px;">
+                    <button id="history-btn" class="btn-history" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border: none; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; transition: all 0.2s; font-weight: 600;">
+                        📜 Historique
+                    </button>
                     <button id="admin-btn" class="btn-admin">
                         🛠️ Admin
                     </button>
@@ -686,26 +689,10 @@
                         <div class="hint">💡 Conseil : Ouvrez CVLM directement depuis la page de l'offre.</div>
                     </div>
 
-                    <!-- Section 1.5: Mes lettres générées -->
-                    <div class="section">
-                        <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <span>📝</span>
-                                Mes lettres générées
-                            </div>
-                            <button id="refresh-letters-btn" style="background: none; border: none; cursor: pointer; font-size: 18px; color: var(--text-secondary); padding: 4px 8px; border-radius: 4px; transition: all 0.2s;" title="Actualiser" onmouseover="this.style.background='rgba(37, 99, 235, 0.1)'; this.style.color='var(--primary)'" onmouseout="this.style.background='none'; this.style.color='var(--text-secondary)'">
-                                🔄
-                            </button>
-                        </div>
-                        <div id="letters-list" style="margin-top: 12px;">
-                            <!-- Les lettres seront ajoutées ici dynamiquement -->
-                        </div>
-                    </div>
-
                     <!-- Section 2: Mes CV -->
                     <div class="section">
                         <div class="section-title">
-                            <span>�</span>
+                            <span>📄</span>
                             Mes CV
                         </div>
                         <div class="file-input-wrapper">

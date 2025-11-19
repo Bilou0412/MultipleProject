@@ -8,6 +8,9 @@ import os
 import shutil
 
 from domain.ports.file_storage import FileStorage
+from infrastructure.adapters.logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class LocalFileStorage(FileStorage):
@@ -57,7 +60,7 @@ class LocalFileStorage(FileStorage):
             with open(full_path, 'rb') as f:
                 return f.read()
         except Exception as e:
-            print(f"⚠️ Erreur lecture fichier {file_path}: {e}")
+            logger.warning(f"Erreur lecture fichier {file_path}: {e}")
             return None
     
     def delete_file(self, file_path: str) -> bool:
@@ -73,7 +76,7 @@ class LocalFileStorage(FileStorage):
             full_path.unlink()
             return True
         except Exception as e:
-            print(f"⚠️ Erreur suppression fichier {file_path}: {e}")
+            logger.warning(f"Erreur suppression fichier {file_path}: {e}")
             return False
     
     def file_exists(self, file_path: str) -> bool:
@@ -95,7 +98,7 @@ class LocalFileStorage(FileStorage):
         try:
             return full_path.stat().st_size
         except Exception as e:
-            print(f"⚠️ Erreur récupération taille {file_path}: {e}")
+            logger.warning(f"Erreur récupération taille {file_path}: {e}")
             return None
     
     # === Méthodes spécifiques pour CVs ===
@@ -159,7 +162,7 @@ class LocalFileStorage(FileStorage):
             file_path.unlink()
             return True
         except Exception as e:
-            print(f"⚠️ Erreur suppression CV {cv_id}: {e}")
+            logger.warning(f"Erreur suppression CV {cv_id}: {e}")
             return False
     
     # === Méthodes spécifiques pour lettres de motivation ===
@@ -223,7 +226,7 @@ class LocalFileStorage(FileStorage):
             file_path.unlink()
             return True
         except Exception as e:
-            print(f"⚠️ Erreur suppression lettre {letter_id}: {e}")
+            logger.warning(f"Erreur suppression lettre {letter_id}: {e}")
             return False
 
     
