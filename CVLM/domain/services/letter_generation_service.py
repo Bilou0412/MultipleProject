@@ -6,7 +6,6 @@ import uuid
 from pathlib import Path
 from typing import Tuple
 
-from domain.use_cases.analyze_cv_and_offer import AnalyseCvOffer
 from domain.entities.motivational_letter import MotivationalLetter
 from domain.entities.user import User
 from domain.entities.cv import Cv
@@ -69,36 +68,71 @@ class LetterGenerationService:
         Returns:
             Tuple (letter_id, file_path, letter_text)
         """
-        cv_path = Path(cv.file_path)
-        
-        # Instancier les services
+        # Instancier les adapters
         document_parser = PyPdfParser()
         job_fetcher = WelcomeToTheJungleFetcher()
         llm = self._create_llm_service(llm_provider)
         pdf_gen = self._create_pdf_generator(pdf_generator)
         
-        # Use case de génération
-        use_case = AnalyseCvOffer(
-            job_offer_fetcher=job_fetcher,
-            document_parser=document_parser,
-            llm=llm,
-            pdf_generator=pdf_gen
-        )
+        # === PHASE 1: Extraction CV ===
+        cv_text = cv.raw_text  # On a déjà le texte du CV depuis l'entité
         
-        # Générer
+        # === PHASE 2: Récupération offre d'emploi ===
+        job_offer_text = job_fetcher.fetch(url=job_url)
+        
+        # === PHASE 3: Génération texte via LLM ===
+        prompt = self._build_letter_prompt(cv_text, job_offer_text)
+        letter_text = llm.send_to_llm(prompt)
+        
+        # === PHASE 4: Génération PDF ===
         letter_id = str(uuid.uuid4())
         output_path = OUTPUT_DIR / f"lettre_{letter_id}.pdf"
         
-        result_path = use_case.execute(
-            cv_path=cv_path,
-            jo_path=job_url,
-            output_path=str(output_path),
-            use_scraper=True
-        )
+        # Créer l'entité MotivationalLetter temporaire pour le PDF
+        from domain.entities.motivational_letter import MotivationalLetter
+        temp_letter = MotivationalLetter(raw_text=letter_text)
+        
+        # Générer le PDF
+        pdf_path = pdf_gen.create_pdf(temp_letter, str(output_path))
         
         logger.info(f"Lettre générée: {letter_id} pour l'utilisateur {user.email}")
         
-        return letter_id, result_path, self._extract_text_from_pdf(result_path)
+        return letter_id, pdf_path, letter_text
+    
+    def _build_letter_prompt(self, cv_text: str, job_offer_text: str) -> str:
+        """
+        Construit le prompt pour la génération de lettre de motivation.
+        
+        Args:
+            cv_text: Contenu textuel du CV
+            job_offer_text: Contenu de l'offre d'emploi
+        
+        Returns:
+            Prompt formaté pour le LLM
+        """
+        return f"""
+Tu es un assistant expert en rédaction professionnelle.
+
+🎯 Objectif :
+Rédige une **lettre de motivation complète et immédiatement exploitable**,
+adaptée à l'offre d'emploi et au CV ci-dessous.
+
+⚙️ Règles :
+- Donne uniquement le texte final de la lettre, sans aucun commentaire, balise, guillemet, ou texte d'explication.
+- Ne mets **aucun élément entre crochets** (pas de [Date], [Nom], etc.).
+- Si une information manque (par ex. adresse, nom du recruteur), écris une **formule naturelle générique** (ex. "Madame, Monsieur," ou "le service recrutement").
+- Formate la lettre pour être prête à l'envoi (coordonnées en haut, objet, paragraphes bien séparés, signature).
+- Langue : français professionnel, fluide et naturel.
+- Ton : motivé, sincère, précis, sans exagération.
+
+🧾 Texte du CV :
+{cv_text}
+
+📄 Texte de l'offre d'emploi :
+{job_offer_text}
+
+🪶 Rédige maintenant la lettre de motivation finale :
+        """.strip()
     
     def save_letter_to_storage(
         self,
