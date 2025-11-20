@@ -32,6 +32,7 @@ from domain.use_cases.generate_cover_letter import GenerateCoverLetterUseCase
 from domain.use_cases.generate_text import GenerateTextUseCase
 from domain.use_cases.upload_cv import UploadCvUseCase
 from domain.use_cases.download_history_file import DownloadHistoryFileUseCase
+from domain.use_cases.download_letter import DownloadLetterUseCase
 
 logger = setup_logger(__name__)
 
@@ -203,6 +204,20 @@ def get_download_history_file_use_case(
     """Factory pour DownloadHistoryFileUseCase"""
     return DownloadHistoryFileUseCase(
         history_repository=history_repository,
+        filename_builder=filename_builder
+    )
+
+
+def get_download_letter_use_case(
+    letter_repository: PostgresMotivationalLetterRepository = Depends(get_letter_repository),
+    filename_builder: FilenameBuilder = Depends(get_filename_builder)
+) -> DownloadLetterUseCase:
+    """Factory pour DownloadLetterUseCase"""
+    from infrastructure.adapters.local_file_storage import LocalFileStorage
+    
+    return DownloadLetterUseCase(
+        letter_repository=letter_repository,
+        file_storage=LocalFileStorage(),
         filename_builder=filename_builder
     )
 

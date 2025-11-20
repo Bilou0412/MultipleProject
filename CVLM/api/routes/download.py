@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from api.dependencies import get_current_user, get_db, get_download_history_file_use_case
+from api.dependencies import get_current_user, get_db, get_download_history_file_use_case, get_download_letter_use_case
 from domain.entities.user import User
 from domain.services.cv_validation_service import CvValidationService
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
@@ -29,7 +29,7 @@ file_storage = LocalFileStorage()
 async def download_letter(
     letter_id: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    use_case = Depends(get_download_letter_use_case)
 ):
     """
     Télécharge une lettre de motivation depuis PostgreSQL.
@@ -37,7 +37,7 @@ async def download_letter(
     Args:
         letter_id: ID de la lettre à télécharger
         current_user: Utilisateur connecté (injecté)
-        db: Session de base de données (injectée)
+        use_case: Use case de téléchargement (injecté)
     
     Returns:
         FileResponse avec le PDF
@@ -47,32 +47,20 @@ async def download_letter(
         HTTPException 404: Lettre ou fichier introuvable
         HTTPException 500: Erreur serveur
     """
-    try:
-        letter_repo = PostgresMotivationalLetterRepository(db)
-        letter = letter_repo.get_by_id(letter_id)
-        
-        if not letter:
-            raise HTTPException(status_code=404, detail="Lettre non trouvée")
-        
-        if letter.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Accès interdit à cette lettre")
-        
-        file_path = file_storage.get_letter_path(letter_id)
-        
-        if not file_path or not Path(file_path).exists():
-            raise HTTPException(status_code=404, detail="Fichier PDF introuvable")
-        
-        return FileResponse(
-            path=file_path,
-            filename=letter.filename or f"lettre_{letter_id}.pdf",
-            media_type="application/pdf"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Erreur téléchargement lettre: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur lors du téléchargement: {str(e)}")
+    # Créer l'input du use case
+    from domain.use_cases.download_letter import DownloadLetterInput
+    
+    input_data = DownloadLetterInput(letter_id=letter_id)
+    
+    # Exécuter le use case (orchestration complète)
+    output = use_case.execute(input_data, current_user)
+    
+    # Retourner la réponse
+    return FileResponse(
+        path=output.file_path,
+        filename=output.filename,
+        media_type=output.media_type
+    )
 
 
 @router.get("/user/history/{history_id}/download")
