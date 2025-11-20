@@ -29,6 +29,7 @@ from domain.services.job_info_extractor import JobInfoExtractor
 # Use Cases
 from domain.use_cases.generate_cover_letter import GenerateCoverLetterUseCase
 from domain.use_cases.generate_text import GenerateTextUseCase
+from domain.use_cases.upload_cv import UploadCvUseCase
 
 logger = setup_logger(__name__)
 
@@ -168,6 +169,23 @@ def get_generate_text_use_case(
         document_parser=PyPdfParser(),
         job_offer_fetcher=WelcomeToTheJungleFetcher(),
         llm_service_factory=llm_service_factory
+    )
+
+
+def get_upload_cv_use_case(
+    cv_repository: PostgresCvRepository = Depends(get_cv_repository)
+) -> UploadCvUseCase:
+    """Factory pour UploadCvUseCase"""
+    from infrastructure.adapters.pypdf_parse import PyPdfParser
+    from infrastructure.adapters.local_file_storage import LocalFileStorage
+    from config.constants import MAX_FILE_SIZE, FILE_STORAGE_BASE_PATH
+    
+    return UploadCvUseCase(
+        cv_repository=cv_repository,
+        document_parser=PyPdfParser(),
+        file_storage=LocalFileStorage(base_path=FILE_STORAGE_BASE_PATH),
+        max_file_size=MAX_FILE_SIZE,
+        allowed_extensions=['.pdf']
     )
 
 
