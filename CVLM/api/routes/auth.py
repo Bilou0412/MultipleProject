@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from api.models.auth import AuthTokenRequest, AuthTokenResponse, UserResponse
 from api.dependencies import get_current_user, get_google_oauth_service
 from domain.entities.user import User
-from infrastructure.adapters.database_config import get_db
+from infrastructure.database.config import get_db
 from infrastructure.adapters.google_oauth_service import GoogleOAuthService
 from infrastructure.adapters.auth_middleware import create_access_token
 from infrastructure.adapters.logger_config import setup_logger

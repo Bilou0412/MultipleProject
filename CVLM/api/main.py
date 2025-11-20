@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
-from infrastructure.adapters.database_config import init_database
+from infrastructure.database.config import init_database
 from infrastructure.adapters.local_file_storage import LocalFileStorage
 from infrastructure.adapters.logger_config import setup_logger
 from config.constants import (

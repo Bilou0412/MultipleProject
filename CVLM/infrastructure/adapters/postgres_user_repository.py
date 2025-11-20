@@ -7,7 +7,8 @@ import uuid
 
 from domain.ports.user_repository import UserRepository
 from domain.entities.user import User
-from infrastructure.adapters.database_config import UserModel, get_session_factory
+from infrastructure.database.models import UserModel
+from infrastructure.database.config import get_session_factory
 
 
 class PostgresUserRepository(UserRepository):

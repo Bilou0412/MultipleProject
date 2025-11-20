@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 import uuid
 
 from domain.entities.user import User
-from infrastructure.adapters.database_config import get_db
+from infrastructure.database.config import get_db
 from infrastructure.adapters.postgres_user_repository import PostgresUserRepository
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
 from infrastructure.adapters.postgres_motivational_letter_repository import PostgresMotivationalLetterRepository

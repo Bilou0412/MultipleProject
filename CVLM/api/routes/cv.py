@@ -11,7 +11,7 @@ from api.models.cv import CvInfo, UploadResponse, CvListResponse
 from api.dependencies import get_current_user
 from domain.entities.user import User
 from domain.entities.cv import Cv
-from infrastructure.adapters.database_config import get_db
+from infrastructure.database.config import get_db
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
 from infrastructure.adapters.pypdf_parse import PyPdfParser
 from infrastructure.adapters.local_file_storage import LocalFileStorage

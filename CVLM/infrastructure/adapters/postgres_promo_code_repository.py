@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from domain.entities.promo_code import PromoCode
 from domain.ports.promo_code_repository import PromoCodeRepository
-from infrastructure.adapters.database_config import PromoCodeModel
+from infrastructure.database.models import PromoCodeModel
 from infrastructure.adapters.logger_config import setup_logger
 
 logger = setup_logger(__name__)

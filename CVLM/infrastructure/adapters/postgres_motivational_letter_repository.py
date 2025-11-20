@@ -7,7 +7,8 @@ import uuid
 
 from domain.ports.motivational_letter_repository import MotivationalLetterRepository
 from domain.entities.motivational_letter import MotivationalLetter
-from infrastructure.adapters.database_config import MotivationalLetterModel, get_session_factory
+from infrastructure.database.models import MotivationalLetterModel
+from infrastructure.database.config import get_session_factory
 
 
 class PostgresMotivationalLetterRepository(MotivationalLetterRepository):

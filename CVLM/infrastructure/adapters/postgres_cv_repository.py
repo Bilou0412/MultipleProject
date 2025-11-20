@@ -7,7 +7,8 @@ import uuid
 
 from domain.ports.cv_repository import CvRepository
 from domain.entities.cv import Cv
-from infrastructure.adapters.database_config import CvModel, get_session_factory
+from infrastructure.database.models import CvModel
+from infrastructure.database.config import get_session_factory
 
 
 class PostgresCvRepository(CvRepository):

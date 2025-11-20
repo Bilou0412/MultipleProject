@@ -10,7 +10,7 @@ import math
 
 from domain.entities.generation_history import GenerationHistory
 from domain.ports.generation_history_repository import GenerationHistoryRepository
-from infrastructure.adapters.database_config import GenerationHistoryModel
+from infrastructure.database.models import GenerationHistoryModel
 from infrastructure.adapters.logger_config import setup_logger
 
 logger = setup_logger(__name__)
