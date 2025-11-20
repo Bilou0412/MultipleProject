@@ -3,14 +3,13 @@ Routes de téléchargement et nettoyage de fichiers
 Endpoints: /download-letter/{letter_id}, /user/history/{history_id}/download, /cleanup/{cv_id}
 """
 
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from api.dependencies import get_current_user, get_db
+from api.dependencies import get_current_user, get_db, get_download_history_file_use_case
 from domain.entities.user import User
 from domain.services.cv_validation_service import CvValidationService
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
@@ -80,7 +79,7 @@ async def download_letter(
 async def download_history_file(
     history_id: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    use_case = Depends(get_download_history_file_use_case)
 ):
     """
     Télécharge un fichier PDF depuis l'historique.
@@ -88,7 +87,7 @@ async def download_history_file(
     Args:
         history_id: ID de l'entrée historique
         current_user: Utilisateur connecté (injecté)
-        db: Session de base de données (injectée)
+        use_case: Use case de téléchargement (injecté)
     
     Returns:
         FileResponse avec le PDF
@@ -99,57 +98,20 @@ async def download_history_file(
         HTTPException 410: Fichier expiré
         HTTPException 500: Erreur serveur
     """
-    try:
-        history_repo = PostgresGenerationHistoryRepository(db)
-        history = history_repo.get_by_id(history_id)
-        
-        if not history:
-            raise HTTPException(status_code=404, detail="Entrée introuvable")
-        
-        if history.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Accès refusé")
-        
-        if not history.is_downloadable():
-            raise HTTPException(status_code=410, detail="Fichier expiré ou indisponible")
-        
-        if not os.path.exists(history.file_path):
-            raise HTTPException(status_code=404, detail="Fichier physique introuvable")
-        
-        # Construire un nom de fichier propre
-        parts = []
-        if history.company_name and history.company_name.strip():
-            parts.append(history.company_name.strip())
-        if history.job_title and history.job_title.strip():
-            parts.append(history.job_title.strip())
-        
-        if parts:
-            filename = '_'.join(parts)
-        else:
-            filename = 'lettre_motivation'
-        
-        # Nettoyer le nom de fichier
-        filename = filename.replace(' ', '_').replace('/', '_')
-        # Supprimer les underscores multiples
-        while '__' in filename:
-            filename = filename.replace('__', '_')
-        # Supprimer les underscores au début et à la fin
-        filename = filename.strip('_')
-        # Ajouter l'extension
-        filename = filename + '.pdf'
-        
-        logger.info(f"Téléchargement historique: filename='{filename}', company='{history.company_name}', job='{history.job_title}'")
-        
-        return FileResponse(
-            path=history.file_path,
-            filename=filename,
-            media_type='application/pdf'
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Erreur téléchargement fichier: {e}")
-        raise HTTPException(status_code=500, detail="Erreur lors du téléchargement")
+    # Créer l'input du use case
+    from domain.use_cases.download_history_file import DownloadHistoryFileInput
+    
+    input_data = DownloadHistoryFileInput(history_id=history_id)
+    
+    # Exécuter le use case (orchestration complète)
+    output = use_case.execute(input_data, current_user)
+    
+    # Retourner la réponse
+    return FileResponse(
+        path=output.file_path,
+        filename=output.filename,
+        media_type=output.media_type
+    )
 
 
 @router.delete("/cleanup/{cv_id}")

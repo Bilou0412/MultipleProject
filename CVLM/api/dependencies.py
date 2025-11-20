@@ -25,11 +25,13 @@ from domain.services.promo_code_service import PromoCodeService
 from domain.services.generation_history_service import GenerationHistoryService
 from domain.services.use_case_validator import UseCaseValidator
 from domain.services.job_info_extractor import JobInfoExtractor
+from domain.services.filename_builder import FilenameBuilder
 
 # Use Cases
 from domain.use_cases.generate_cover_letter import GenerateCoverLetterUseCase
 from domain.use_cases.generate_text import GenerateTextUseCase
 from domain.use_cases.upload_cv import UploadCvUseCase
+from domain.use_cases.download_history_file import DownloadHistoryFileUseCase
 
 logger = setup_logger(__name__)
 
@@ -110,6 +112,11 @@ def get_job_info_extractor() -> JobInfoExtractor:
     return JobInfoExtractor()
 
 
+def get_filename_builder() -> FilenameBuilder:
+    """Factory pour FilenameBuilder (stateless service)"""
+    return FilenameBuilder()
+
+
 def get_use_case_validator(
     cv_validation: CvValidationService = Depends(get_cv_validation_service),
     credit_service: CreditService = Depends(get_credit_service)
@@ -186,6 +193,17 @@ def get_upload_cv_use_case(
         file_storage=LocalFileStorage(base_path=FILE_STORAGE_BASE_PATH),
         max_file_size=MAX_FILE_SIZE,
         allowed_extensions=['.pdf']
+    )
+
+
+def get_download_history_file_use_case(
+    history_repository: PostgresGenerationHistoryRepository = Depends(get_history_repository),
+    filename_builder: FilenameBuilder = Depends(get_filename_builder)
+) -> DownloadHistoryFileUseCase:
+    """Factory pour DownloadHistoryFileUseCase"""
+    return DownloadHistoryFileUseCase(
+        history_repository=history_repository,
+        filename_builder=filename_builder
     )
 
 
