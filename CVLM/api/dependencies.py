@@ -26,6 +26,7 @@ from domain.services.generation_history_service import GenerationHistoryService
 
 # Use Cases
 from domain.use_cases.generate_cover_letter import GenerateCoverLetterUseCase
+from domain.use_cases.generate_text import GenerateTextUseCase
 
 logger = setup_logger(__name__)
 
@@ -119,6 +120,35 @@ def get_generate_cover_letter_use_case(
         history_service=history_service,
         letter_repository=letter_repository,
         user_repository=user_repository
+    )
+
+
+def get_generate_text_use_case(
+    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
+    credit_service: CreditService = Depends(get_credit_service),
+    history_service: GenerationHistoryService = Depends(get_history_service)
+) -> GenerateTextUseCase:
+    """Factory pour GenerateTextUseCase"""
+    from infrastructure.adapters.pypdf_parse import PyPdfParser
+    from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
+    from infrastructure.adapters.google_gemini_api import GoogleGeminiLlm
+    from infrastructure.adapters.open_ai_api import OpenAiLlm
+    from config.constants import LLM_PROVIDER_GEMINI
+    
+    # Factory function pour créer le LLM service selon le provider
+    def llm_service_factory(provider: str):
+        """Crée le service LLM approprié selon le provider"""
+        if provider.lower() == LLM_PROVIDER_GEMINI:
+            return GoogleGeminiLlm()
+        return OpenAiLlm()
+    
+    return GenerateTextUseCase(
+        cv_validation_service=cv_validation_service,
+        credit_service=credit_service,
+        history_service=history_service,
+        document_parser=PyPdfParser(),
+        job_offer_fetcher=WelcomeToTheJungleFetcher(),
+        llm_service_factory=llm_service_factory
     )
 
 

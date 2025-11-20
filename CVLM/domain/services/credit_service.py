@@ -50,6 +50,31 @@ class CreditService:
         self.user_repository.update(user)
         logger.info(f"Crédit PDF utilisé pour {user.email}. Restants: {user.pdf_credits}")
     
+    def has_text_credits(self, user: User) -> bool:
+        """
+        Vérifie si l'utilisateur a des crédits texte SANS les décompter
+        
+        Args:
+            user: Utilisateur à vérifier
+        
+        Returns:
+            True si l'utilisateur a au moins 1 crédit texte
+        """
+        return user.has_text_credits()
+    
+    def use_text_credit(self, user: User) -> None:
+        """
+        Utilise un crédit texte (SANS vérification préalable)
+        
+        Note: Appelez has_text_credits() avant pour vérifier la disponibilité
+        
+        Args:
+            user: Utilisateur dont décompter le crédit
+        """
+        user.use_text_credit()
+        self.user_repository.update(user)
+        logger.info(f"Crédit texte déduit pour {user.email}. Restants: {user.text_credits}")
+    
     def check_and_use_text_credit(self, user: User) -> None:
         """
         Vérifie et utilise un crédit texte

@@ -3,41 +3,23 @@ Routes de génération de lettres de motivation et textes
 Endpoints: /generate-cover-letter, /generate-text, /list-letters
 """
 
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
-import uuid
-
 from fastapi import APIRouter, Depends, Form, HTTPException
-from sqlalchemy.orm import Session
 
 from api.dependencies import (
     get_current_user,
-    get_db,
-    get_cv_validation_service,
-    get_credit_service,
-    get_letter_generation_service,
-    get_history_service,
     get_letter_repository,
     get_cv_repository,
-    get_generate_cover_letter_use_case
+    get_generate_cover_letter_use_case,
+    get_generate_text_use_case
 )
 from api.models.generation import GenerationResponse, TextGenerationRequest, TextGenerationResponse
 from domain.entities.user import User
-from domain.services.cv_validation_service import CvValidationService
-from domain.services.credit_service import CreditService
-from domain.services.letter_generation_service import LetterGenerationService
-from domain.services.generation_history_service import GenerationHistoryService
 from domain.use_cases.generate_cover_letter import (
     GenerateCoverLetterUseCase,
     GenerateCoverLetterInput
 )
+from domain.use_cases.generate_text import GenerateTextUseCase
 from infrastructure.adapters.postgres_motivational_letter_repository import PostgresMotivationalLetterRepository
-from infrastructure.adapters.pypdf_parse import PyPdfParser
-from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
-from infrastructure.adapters.open_ai_api import OpenAiLlm
-from infrastructure.adapters.google_gemini_api import GoogleGeminiLlm
-from config.constants import LLM_PROVIDER_GEMINI, TEXT_TYPE_WHY_JOIN
 from infrastructure.adapters.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -110,9 +92,7 @@ async def generate_cover_letter(
 async def generate_text(
     data: TextGenerationRequest,
     current_user: User = Depends(get_current_user),
-    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
-    credit_service: CreditService = Depends(get_credit_service),
-    history_service: GenerationHistoryService = Depends(get_history_service)
+    use_case: GenerateTextUseCase = Depends(get_generate_text_use_case)
 ):
     """
     Génère un texte de motivation personnalisé sans PDF.
@@ -120,81 +100,43 @@ async def generate_text(
     Args:
         data: Requête avec cv_id, job_url, text_type, llm_provider
         current_user: Utilisateur connecté (injecté)
-        cv_validation_service: Service de validation CV (injecté)
-        credit_service: Service de gestion des crédits (injecté)
-        history_service: Service d'historique (injecté)
+        use_case: Use Case de génération texte (injecté)
     
     Returns:
         TextGenerationResponse avec le texte généré
     
     Raises:
-        HTTPException 400: CV non sélectionné
+        HTTPException 400: CV non sélectionné ou invalide
         HTTPException 403: Crédits insuffisants
         HTTPException 500: Erreur de génération
     """
     try:
-        # Validation
-        if not data.cv_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Aucun CV sélectionné. Veuillez d'abord télécharger et sélectionner un CV."
-            )
+        # Préparer l'input du use case
+        from domain.use_cases.generate_text import GenerateTextInput
         
-        # Valider le CV et vérifier crédit
-        cv = cv_validation_service.get_and_validate_cv(data.cv_id, current_user)
-        credit_service.check_and_use_text_credit(current_user)
+        input_data = GenerateTextInput(
+            cv_id=data.cv_id,
+            job_url=data.job_url,
+            text_type=data.text_type,
+            llm_provider=data.llm_provider
+        )
         
-        # Parser et fetcher
-        document_parser = PyPdfParser()
-        job_fetcher = WelcomeToTheJungleFetcher()
-        llm = GoogleGeminiLlm() if data.llm_provider.lower() == LLM_PROVIDER_GEMINI else OpenAiLlm()
+        # Exécuter le use case
+        output = use_case.execute(input_data, current_user)
         
-        cv_text = document_parser.parse_document(input_path=str(cv.file_path))
+        return TextGenerationResponse(status="success", text=output.text)
         
-        job_offer_text = ""
-        try:
-            job_offer_text = job_fetcher.fetch(url=data.job_url)
-        except Exception as e:
-            logger.warning(f"Erreur fetch offre d'emploi: {e}")
-        
-        # Créer le prompt
-        prompt = _build_text_generation_prompt(cv_text, job_offer_text, data.text_type)
-        
-        # Générer
-        generated_text = llm.send_to_llm(prompt)
-        logger.info(f"Texte généré pour {current_user.email}")
-        
-        # Enregistrer dans l'historique
-        try:
-            # Extraire les infos de l'offre
-            company_name = None
-            job_title = None
-            try:
-                if 'welcometothejungle' in data.job_url:
-                    parts = data.job_url.split('/')
-                    if len(parts) >= 6:
-                        company_name = parts[4].replace('-', ' ').title()
-                        job_title = parts[6].split('?')[0].replace('-', ' ').title()
-            except Exception:
-                pass
-            
-            history_service.record_generation(
-                user_id=current_user.id,
-                gen_type='text',
-                job_title=job_title,
-                company_name=company_name,
-                job_url=data.job_url,
-                cv_filename=cv.filename,
-                cv_id=data.cv_id,
-                text_content=generated_text,
-                status='success'
-            )
-            
-        except Exception as e:
-            logger.warning(f"Erreur enregistrement historique: {e}")
-        
-        return TextGenerationResponse(status="success", text=generated_text)
-        
+    except ValueError as e:
+        # Erreur de validation (CV, etc.)
+        logger.error(f"Erreur validation génération texte: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        # Erreur métier (crédits, génération, etc.)
+        logger.error(f"Erreur métier génération texte: {e}")
+        # Déterminer le status code selon le message
+        if "crédit" in str(e).lower() or "insufficient" in str(e).lower():
+            raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -249,33 +191,3 @@ async def list_letters(
     except Exception as e:
         logger.error(f"Erreur liste lettres: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération des lettres: {str(e)}")
-
-
-def _build_text_generation_prompt(cv_text: str, job_offer_text: str, text_type: str) -> str:
-    """
-    Construit le prompt pour la génération de texte.
-    
-    Args:
-        cv_text: Contenu du CV extrait
-        job_offer_text: Contenu de l'offre d'emploi
-        text_type: Type de texte à générer (why_join, etc.)
-    
-    Returns:
-        Prompt formaté pour le LLM
-    """
-    if text_type == TEXT_TYPE_WHY_JOIN:
-        return (
-            f"Vous êtes un assistant expert en communication RH.\n\n"
-            f"Contexte (CV) :\n{cv_text}\n\n"
-            f"Offre d'emploi :\n{job_offer_text}\n\n"
-            f"Tâche : Rédigez une réponse concise (3-6 phrases) à la question : "
-            f"'Expliquez-nous pourquoi vous souhaitez nous rejoindre.' "
-            f"Utilisez un ton professionnel et motivé. Ne fournissez que le texte de la réponse, "
-            f"sans préambule ni signature."
-        )
-    return (
-        f"Vous êtes un assistant expert.\n\n"
-        f"Contexte (CV) :\n{cv_text}\n\n"
-        f"Offre d'emploi :\n{job_offer_text}\n\n"
-        f"Tâche : Rédigez un court paragraphe adapté à l'offre."
-    )
