@@ -16,6 +16,25 @@ class CreditService:
     def __init__(self, user_repository: UserRepository):
         self.user_repository = user_repository
     
+    def has_credits(self, user: User, credit_type: str = "pdf") -> bool:
+        """
+        Vérifie si l'utilisateur a des crédits disponibles SANS les décompter
+        
+        Args:
+            user: Utilisateur à vérifier
+            credit_type: Type de crédit ("pdf" ou "text")
+        
+        Returns:
+            True si l'utilisateur a au moins 1 crédit du type demandé
+        """
+        if credit_type == "pdf":
+            return user.has_pdf_credits()
+        elif credit_type == "text":
+            return user.has_text_credits()
+        else:
+            logger.warning(f"Type de crédit inconnu: {credit_type}")
+            return False
+    
     def check_and_use_pdf_credit(self, user: User) -> None:
         """
         Vérifie et utilise un crédit PDF
@@ -45,4 +64,5 @@ class CreditService:
         user.use_text_credit()
         self.user_repository.update(user)
         logger.info(f"Crédit texte utilisé pour {user.email}. Restants: {user.text_credits}")
+
 

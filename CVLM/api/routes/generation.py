@@ -19,7 +19,8 @@ from api.dependencies import (
     get_letter_generation_service,
     get_history_service,
     get_letter_repository,
-    get_cv_repository
+    get_cv_repository,
+    get_generate_cover_letter_use_case
 )
 from api.models.generation import GenerationResponse, TextGenerationRequest, TextGenerationResponse
 from domain.entities.user import User
@@ -27,6 +28,10 @@ from domain.services.cv_validation_service import CvValidationService
 from domain.services.credit_service import CreditService
 from domain.services.letter_generation_service import LetterGenerationService
 from domain.services.generation_history_service import GenerationHistoryService
+from domain.use_cases.generate_cover_letter import (
+    GenerateCoverLetterUseCase,
+    GenerateCoverLetterInput
+)
 from infrastructure.adapters.postgres_motivational_letter_repository import PostgresMotivationalLetterRepository
 from infrastructure.adapters.pypdf_parse import PyPdfParser
 from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
@@ -48,11 +53,7 @@ async def generate_cover_letter(
     llm_provider: str = Form("openai"),
     pdf_generator: str = Form("fpdf"),
     current_user: User = Depends(get_current_user),
-    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
-    credit_service: CreditService = Depends(get_credit_service),
-    letter_service: LetterGenerationService = Depends(get_letter_generation_service),
-    history_service: GenerationHistoryService = Depends(get_history_service),
-    letter_repo: PostgresMotivationalLetterRepository = Depends(get_letter_repository)
+    use_case: GenerateCoverLetterUseCase = Depends(get_generate_cover_letter_use_case)
 ):
     """
     Génère une lettre de motivation en PDF à partir d'un CV et d'une offre d'emploi.
@@ -63,11 +64,7 @@ async def generate_cover_letter(
         llm_provider: Fournisseur LLM (openai ou gemini)
         pdf_generator: Générateur PDF (fpdf ou weasyprint)
         current_user: Utilisateur connecté (injecté)
-        cv_validation_service: Service de validation CV (injecté)
-        credit_service: Service de gestion des crédits (injecté)
-        letter_service: Service de génération de lettres (injecté)
-        history_service: Service d'historique (injecté)
-        letter_repo: Repository lettres (injecté)
+        use_case: Use case de génération (injecté)
     
     Returns:
         GenerationResponse avec file_id, download_url et letter_text
@@ -78,78 +75,35 @@ async def generate_cover_letter(
         HTTPException 500: Erreur de génération
     """
     try:
-        # Valider le CV
-        cv = cv_validation_service.get_and_validate_cv(cv_id, current_user)
-        
-        # Vérifier et utiliser un crédit (lève InsufficientCreditsError si pas de crédit)
-        credit_service.check_and_use_pdf_credit(current_user)
-        
-        # Générer la lettre
-        letter_id, pdf_path, letter_text = letter_service.generate_letter_pdf(
-            cv=cv,
+        # Créer l'input du use case
+        input_data = GenerateCoverLetterInput(
+            user_id=current_user.id,
+            cv_id=cv_id,
             job_url=job_url,
             llm_provider=llm_provider,
-            pdf_generator=pdf_generator,
-            user=current_user
+            pdf_generator=pdf_generator
         )
         
-        # Sauvegarder en base de données
-        try:
-            letter = letter_service.save_letter_to_storage(
-                letter_id=letter_id,
-                pdf_path=pdf_path,
-                cv_id=cv_id,
-                job_url=job_url,
-                letter_text=letter_text,
-                llm_provider=llm_provider,
-                user=current_user
-            )
-            letter_repo.create(letter)
-            
-        except Exception as e:
-            logger.warning(f"Erreur sauvegarde lettre en base: {e}")
+        # Exécuter le use case (orchestration complète)
+        output = use_case.execute(input_data, current_user)
         
-        # Enregistrer dans l'historique
-        try:
-            # Extraire les infos de l'offre (simple parsing du job_url)
-            company_name = None
-            job_title = None
-            try:
-                if 'welcometothejungle' in job_url:
-                    parts = job_url.split('/')
-                    if len(parts) >= 6:
-                        company_name = parts[4].replace('-', ' ').title()
-                        job_title = parts[6].split('?')[0].replace('-', ' ').title()
-            except Exception:
-                pass
-            
-            history_service.record_generation(
-                user_id=current_user.id,
-                gen_type='pdf',
-                job_title=job_title,
-                company_name=company_name,
-                job_url=job_url,
-                cv_filename=cv.filename,
-                cv_id=cv_id,
-                file_path=pdf_path,
-                status='success'
-            )
-            
-        except Exception as e:
-            logger.warning(f"Erreur enregistrement historique: {e}")
-        
+        # Retourner la réponse
         return GenerationResponse(
             status="success",
-            file_id=letter_id,
-            download_url=f"/download-letter/{letter_id}",
-            letter_text=letter_text
+            file_id=output.letter_id,
+            download_url=output.download_url,
+            letter_text=output.letter_text
         )
         
     except HTTPException:
+        # HTTPException déjà formatée, on la propage
         raise
     except Exception as e:
         logger.error(f"Erreur génération lettre: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la génération: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la génération: {str(e)}"
+        )
 
 
 @router.post("/generate-text", response_model=TextGenerationResponse)

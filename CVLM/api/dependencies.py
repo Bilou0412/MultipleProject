@@ -24,6 +24,9 @@ from domain.services.admin_service import AdminService
 from domain.services.promo_code_service import PromoCodeService
 from domain.services.generation_history_service import GenerationHistoryService
 
+# Use Cases
+from domain.use_cases.generate_cover_letter import GenerateCoverLetterUseCase
+
 logger = setup_logger(__name__)
 
 
@@ -96,6 +99,27 @@ def get_history_service(
 ) -> GenerationHistoryService:
     """Factory pour GenerationHistoryService"""
     return GenerationHistoryService(history_repo)
+
+
+# === Use Case Factories ===
+
+def get_generate_cover_letter_use_case(
+    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
+    credit_service: CreditService = Depends(get_credit_service),
+    letter_generation_service: LetterGenerationService = Depends(get_letter_generation_service),
+    history_service: GenerationHistoryService = Depends(get_history_service),
+    letter_repository: PostgresMotivationalLetterRepository = Depends(get_letter_repository),
+    user_repository: PostgresUserRepository = Depends(get_user_repository)
+) -> GenerateCoverLetterUseCase:
+    """Factory pour GenerateCoverLetterUseCase"""
+    return GenerateCoverLetterUseCase(
+        cv_validation_service=cv_validation_service,
+        credit_service=credit_service,
+        letter_generation_service=letter_generation_service,
+        history_service=history_service,
+        letter_repository=letter_repository,
+        user_repository=user_repository
+    )
 
 
 def get_google_oauth_service(
