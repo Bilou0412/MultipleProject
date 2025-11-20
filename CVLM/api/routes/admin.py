@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from api.dependencies import verify_admin, get_db
+from api.dependencies import verify_admin, get_db, get_admin_service, get_promo_code_service
 from api.models.admin import (
     DashboardStatsResponse,
     PromoCodeGenerateRequest,
@@ -20,8 +20,6 @@ from api.models.admin import (
 )
 from api.models.auth import UserResponse
 from domain.entities.user import User
-from infrastructure.adapters.postgres_user_repository import PostgresUserRepository
-from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
 from domain.services.admin_service import AdminService
 from domain.services.promo_code_service import PromoCodeService
 from infrastructure.adapters.logger_config import setup_logger
@@ -35,14 +33,14 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/stats", response_model=DashboardStatsResponse)
 async def get_admin_stats(
     admin: User = Depends(verify_admin),
-    db: Session = Depends(get_db)
+    admin_service: AdminService = Depends(get_admin_service)
 ):
     """
     Récupère les statistiques du dashboard admin.
     
     Args:
         admin: Utilisateur admin connecté (injecté)
-        db: Session de base de données (injectée)
+        admin_service: Service admin (injecté)
     
     Returns:
         DashboardStatsResponse avec total_users, active_promo_codes, etc.
@@ -52,10 +50,6 @@ async def get_admin_stats(
         HTTPException 500: Erreur serveur
     """
     try:
-        user_repo = PostgresUserRepository(db)
-        promo_repo = PostgresPromoCodeRepository(db)
-        admin_service = AdminService(user_repo, promo_repo)
-        
         stats = admin_service.get_dashboard_stats()
         return DashboardStatsResponse(**stats)
         

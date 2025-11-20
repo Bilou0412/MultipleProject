@@ -10,9 +10,19 @@ from infrastructure.database.config import get_db
 from infrastructure.adapters.postgres_user_repository import PostgresUserRepository
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
 from infrastructure.adapters.postgres_motivational_letter_repository import PostgresMotivationalLetterRepository
+from infrastructure.adapters.postgres_promo_code_repository import PostgresPromoCodeRepository
+from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
 from infrastructure.adapters.auth_middleware import verify_access_token
 from infrastructure.adapters.google_oauth_service import GoogleOAuthService
 from infrastructure.adapters.logger_config import setup_logger
+
+# Services
+from domain.services.cv_validation_service import CvValidationService
+from domain.services.credit_service import CreditService
+from domain.services.letter_generation_service import LetterGenerationService
+from domain.services.admin_service import AdminService
+from domain.services.promo_code_service import PromoCodeService
+from domain.services.generation_history_service import GenerationHistoryService
 
 logger = setup_logger(__name__)
 
@@ -32,6 +42,60 @@ def get_cv_repository(db: Session = Depends(get_db)) -> PostgresCvRepository:
 def get_letter_repository(db: Session = Depends(get_db)) -> PostgresMotivationalLetterRepository:
     """Factory pour MotivationalLetterRepository"""
     return PostgresMotivationalLetterRepository(db)
+
+
+def get_promo_code_repository(db: Session = Depends(get_db)) -> PostgresPromoCodeRepository:
+    """Factory pour PromoCodeRepository"""
+    return PostgresPromoCodeRepository(db)
+
+
+def get_history_repository(db: Session = Depends(get_db)) -> PostgresGenerationHistoryRepository:
+    """Factory pour GenerationHistoryRepository"""
+    return PostgresGenerationHistoryRepository(db)
+
+
+# === Service Factories ===
+
+def get_cv_validation_service(
+    cv_repo: PostgresCvRepository = Depends(get_cv_repository)
+) -> CvValidationService:
+    """Factory pour CvValidationService"""
+    return CvValidationService(cv_repo)
+
+
+def get_credit_service(
+    user_repo: PostgresUserRepository = Depends(get_user_repository)
+) -> CreditService:
+    """Factory pour CreditService"""
+    return CreditService(user_repo)
+
+
+def get_letter_generation_service() -> LetterGenerationService:
+    """Factory pour LetterGenerationService"""
+    return LetterGenerationService()
+
+
+def get_admin_service(
+    user_repo: PostgresUserRepository = Depends(get_user_repository),
+    promo_repo: PostgresPromoCodeRepository = Depends(get_promo_code_repository)
+) -> AdminService:
+    """Factory pour AdminService"""
+    return AdminService(user_repo, promo_repo)
+
+
+def get_promo_code_service(
+    promo_repo: PostgresPromoCodeRepository = Depends(get_promo_code_repository),
+    user_repo: PostgresUserRepository = Depends(get_user_repository)
+) -> PromoCodeService:
+    """Factory pour PromoCodeService"""
+    return PromoCodeService(promo_repo, user_repo)
+
+
+def get_history_service(
+    history_repo: PostgresGenerationHistoryRepository = Depends(get_history_repository)
+) -> GenerationHistoryService:
+    """Factory pour GenerationHistoryService"""
+    return GenerationHistoryService(history_repo)
 
 
 def get_google_oauth_service(

@@ -15,7 +15,7 @@ echo "✅ PostgreSQL est prêt !"
 # Initialiser la base de données si nécessaire
 echo "🔧 Initialisation de la base de données..."
 python -c "
-from infrastructure.adapters.database_config import init_database
+from infrastructure.database.config import init_database
 try:
     init_database()
     print('✅ Base de données initialisée')

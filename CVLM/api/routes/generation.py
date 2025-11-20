@@ -11,15 +11,23 @@ import uuid
 from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy.orm import Session
 
-from api.dependencies import get_current_user, get_db
+from api.dependencies import (
+    get_current_user,
+    get_db,
+    get_cv_validation_service,
+    get_credit_service,
+    get_letter_generation_service,
+    get_history_service,
+    get_letter_repository,
+    get_cv_repository
+)
 from api.models.generation import GenerationResponse, TextGenerationRequest, TextGenerationResponse
 from domain.entities.user import User
 from domain.services.cv_validation_service import CvValidationService
 from domain.services.credit_service import CreditService
 from domain.services.letter_generation_service import LetterGenerationService
-from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
+from domain.services.generation_history_service import GenerationHistoryService
 from infrastructure.adapters.postgres_motivational_letter_repository import PostgresMotivationalLetterRepository
-from infrastructure.adapters.postgres_user_repository import PostgresUserRepository
 from infrastructure.adapters.pypdf_parse import PyPdfParser
 from infrastructure.adapters.welcome_to_jungle_scraper import WelcomeToTheJungleFetcher
 from infrastructure.adapters.open_ai_api import OpenAiLlm
@@ -40,7 +48,11 @@ async def generate_cover_letter(
     llm_provider: str = Form("openai"),
     pdf_generator: str = Form("fpdf"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
+    credit_service: CreditService = Depends(get_credit_service),
+    letter_service: LetterGenerationService = Depends(get_letter_generation_service),
+    history_service: GenerationHistoryService = Depends(get_history_service),
+    letter_repo: PostgresMotivationalLetterRepository = Depends(get_letter_repository)
 ):
     """
     Génère une lettre de motivation en PDF à partir d'un CV et d'une offre d'emploi.
@@ -51,7 +63,11 @@ async def generate_cover_letter(
         llm_provider: Fournisseur LLM (openai ou gemini)
         pdf_generator: Générateur PDF (fpdf ou weasyprint)
         current_user: Utilisateur connecté (injecté)
-        db: Session de base de données (injectée)
+        cv_validation_service: Service de validation CV (injecté)
+        credit_service: Service de gestion des crédits (injecté)
+        letter_service: Service de génération de lettres (injecté)
+        history_service: Service d'historique (injecté)
+        letter_repo: Repository lettres (injecté)
     
     Returns:
         GenerationResponse avec file_id, download_url et letter_text
@@ -62,11 +78,6 @@ async def generate_cover_letter(
         HTTPException 500: Erreur de génération
     """
     try:
-        # Services
-        cv_validation_service = CvValidationService(PostgresCvRepository(db))
-        credit_service = CreditService(PostgresUserRepository(db))
-        letter_service = LetterGenerationService()
-        
         # Valider le CV
         cv = cv_validation_service.get_and_validate_cv(cv_id, current_user)
         
@@ -93,8 +104,6 @@ async def generate_cover_letter(
                 llm_provider=llm_provider,
                 user=current_user
             )
-            
-            letter_repo = PostgresMotivationalLetterRepository(db)
             letter_repo.create(letter)
             
         except Exception as e:
@@ -102,12 +111,6 @@ async def generate_cover_letter(
         
         # Enregistrer dans l'historique
         try:
-            from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
-            from domain.services.generation_history_service import GenerationHistoryService
-            
-            history_repo = PostgresGenerationHistoryRepository(db)
-            history_service = GenerationHistoryService(history_repo)
-            
             # Extraire les infos de l'offre (simple parsing du job_url)
             company_name = None
             job_title = None
@@ -153,7 +156,9 @@ async def generate_cover_letter(
 async def generate_text(
     data: TextGenerationRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
+    credit_service: CreditService = Depends(get_credit_service),
+    history_service: GenerationHistoryService = Depends(get_history_service)
 ):
     """
     Génère un texte de motivation personnalisé sans PDF.
@@ -161,7 +166,9 @@ async def generate_text(
     Args:
         data: Requête avec cv_id, job_url, text_type, llm_provider
         current_user: Utilisateur connecté (injecté)
-        db: Session de base de données (injectée)
+        cv_validation_service: Service de validation CV (injecté)
+        credit_service: Service de gestion des crédits (injecté)
+        history_service: Service d'historique (injecté)
     
     Returns:
         TextGenerationResponse avec le texte généré
@@ -178,10 +185,6 @@ async def generate_text(
                 status_code=400,
                 detail="Aucun CV sélectionné. Veuillez d'abord télécharger et sélectionner un CV."
             )
-        
-        # Services
-        cv_validation_service = CvValidationService(PostgresCvRepository(db))
-        credit_service = CreditService(PostgresUserRepository(db))
         
         # Valider le CV et vérifier crédit
         cv = cv_validation_service.get_and_validate_cv(data.cv_id, current_user)
@@ -209,12 +212,6 @@ async def generate_text(
         
         # Enregistrer dans l'historique
         try:
-            from infrastructure.adapters.postgres_generation_history_repository import PostgresGenerationHistoryRepository
-            from domain.services.generation_history_service import GenerationHistoryService
-            
-            history_repo = PostgresGenerationHistoryRepository(db)
-            history_service = GenerationHistoryService(history_repo)
-            
             # Extraire les infos de l'offre
             company_name = None
             job_title = None
@@ -254,22 +251,21 @@ async def generate_text(
 @router.get("/list-letters")
 async def list_letters(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    letter_repo: PostgresMotivationalLetterRepository = Depends(get_letter_repository),
+    cv_repo = Depends(get_cv_repository)
 ):
     """
     Liste toutes les lettres générées par l'utilisateur.
     
     Args:
         current_user: Utilisateur connecté (injecté)
-        db: Session de base de données (injectée)
+        letter_repo: Repository lettres (injecté)
+        cv_repo: Repository CVs (injecté)
     
     Returns:
         Liste des lettres avec metadata (letter_id, filename, cv_filename, etc.)
     """
     try:
-        letter_repo = PostgresMotivationalLetterRepository(db)
-        cv_repo = PostgresCvRepository(db)
-        
         # Récupérer toutes les lettres de l'utilisateur
         letters = letter_repo.get_by_user_id(current_user.id)
         
