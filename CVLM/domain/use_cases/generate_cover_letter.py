@@ -18,6 +18,8 @@ from domain.services.cv_validation_service import CvValidationService
 from domain.services.credit_service import CreditService
 from domain.services.letter_generation_service import LetterGenerationService
 from domain.services.generation_history_service import GenerationHistoryService
+from domain.services.use_case_validator import UseCaseValidator
+from domain.services.job_info_extractor import JobInfoExtractor
 from domain.exceptions import InsufficientCreditsError, ResourceNotFoundError
 from infrastructure.adapters.logger_config import setup_logger
 
@@ -59,14 +61,16 @@ class GenerateCoverLetterUseCase:
     
     def __init__(
         self,
-        cv_validation_service: CvValidationService,
+        use_case_validator: UseCaseValidator,
+        job_info_extractor: JobInfoExtractor,
         credit_service: CreditService,
         letter_generation_service: LetterGenerationService,
         history_service: GenerationHistoryService,
         letter_repository: MotivationalLetterRepository,
         user_repository: UserRepository
     ):
-        self.cv_validation = cv_validation_service
+        self.validator = use_case_validator
+        self.job_extractor = job_info_extractor
         self.credit_service = credit_service
         self.letter_service = letter_generation_service
         self.history_service = history_service
@@ -99,18 +103,14 @@ class GenerateCoverLetterUseCase:
             # === PHASE 1: VALIDATION (pas de side effect) ===
             logger.info(f"[Use Case] Génération lettre pour user={current_user.email}, cv={input_data.cv_id}")
             
-            # 1.1 Valider le CV et l'accès
-            cv = self.cv_validation.get_and_validate_cv(input_data.cv_id, current_user)
-            logger.debug(f"[Use Case] CV validé: {cv.filename}")
+            # Validation CV + crédits (centralisée via helper)
+            cv = self.validator.validate_cv_and_credits(
+                cv_id=input_data.cv_id,
+                user=current_user,
+                credit_type="pdf"
+            )
             
-            # 1.2 Vérifier les crédits (SANS décompter encore)
-            if not self.credit_service.has_credits(current_user, credit_type="pdf"):
-                logger.warning(f"[Use Case] Crédits insuffisants pour {current_user.email}")
-                raise InsufficientCreditsError(
-                    f"Crédits PDF insuffisants. Crédits restants: {current_user.pdf_credits}"
-                )
-            
-            logger.debug(f"[Use Case] Crédits suffisants: {current_user.pdf_credits} PDF restants")
+            logger.debug(f"[Use Case] ✓ Validation OK: CV={cv.filename}, crédits={current_user.pdf_credits}")
             
             # === PHASE 2: GÉNÉRATION (création de fichier) ===
             logger.info(f"[Use Case] Démarrage génération avec {input_data.llm_provider}")
@@ -143,7 +143,7 @@ class GenerateCoverLetterUseCase:
             logger.debug(f"[Use Case] Lettre sauvegardée en DB: {saved_letter.id}")
             
             # 3.3 Enregistrer dans l'historique
-            company_name, job_title = self._extract_job_info(input_data.job_url)
+            company_name, job_title = self.job_extractor.extract_from_url(input_data.job_url)
             
             self.history_service.record_generation(
                 user_id=current_user.id,
@@ -202,7 +202,7 @@ class GenerateCoverLetterUseCase:
             # Enregistrer l'échec dans l'historique
             if letter_id:
                 try:
-                    company_name, job_title = self._extract_job_info(input_data.job_url)
+                    company_name, job_title = self.job_extractor.extract_from_url(input_data.job_url)
                     
                     self.history_service.record_generation(
                         user_id=current_user.id,
@@ -221,24 +221,3 @@ class GenerateCoverLetterUseCase:
             
             # Propager l'erreur
             raise Exception(f"Erreur lors de la génération de la lettre: {str(e)}") from e
-    
-    def _extract_job_info(self, job_url: str) -> Tuple[str, str]:
-        """
-        Extrait le nom de l'entreprise et le titre du poste depuis l'URL
-        
-        Returns:
-            Tuple (company_name, job_title)
-        """
-        company_name = None
-        job_title = None
-        
-        try:
-            if 'welcometothejungle' in job_url.lower():
-                parts = job_url.split('/')
-                if len(parts) >= 6:
-                    company_name = parts[4].replace('-', ' ').title()
-                    job_title = parts[6].split('?')[0].replace('-', ' ').title()
-        except Exception as e:
-            logger.debug(f"[Use Case] Erreur extraction infos job: {e}")
-        
-        return company_name, job_title

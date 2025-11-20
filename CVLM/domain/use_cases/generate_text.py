@@ -14,7 +14,8 @@ from typing import Optional
 from pathlib import Path
 
 from domain.entities.user import User
-from domain.services.cv_validation_service import CvValidationService
+from domain.services.use_case_validator import UseCaseValidator
+from domain.services.job_info_extractor import JobInfoExtractor
 from domain.services.credit_service import CreditService
 from domain.services.generation_history_service import GenerationHistoryService
 from domain.ports.document_parser import DocumentParser
@@ -67,7 +68,8 @@ class GenerateTextUseCase:
     
     def __init__(
         self,
-        cv_validation_service: CvValidationService,
+        use_case_validator: UseCaseValidator,
+        job_info_extractor: JobInfoExtractor,
         credit_service: CreditService,
         history_service: GenerationHistoryService,
         document_parser: DocumentParser,
@@ -78,14 +80,16 @@ class GenerateTextUseCase:
         Initialise le use case avec ses dépendances injectées.
         
         Args:
-            cv_validation_service: Service de validation des CVs
+            use_case_validator: Helper pour validation CV + crédits
+            job_info_extractor: Helper pour extraction infos job depuis URL
             credit_service: Service de gestion des crédits
             history_service: Service d'historique des générations
             document_parser: Parser pour extraire le contenu des CVs
             job_offer_fetcher: Fetcher pour récupérer les offres d'emploi
             llm_service_factory: Factory pour créer le service LLM selon le provider
         """
-        self._cv_validation = cv_validation_service
+        self._validator = use_case_validator
+        self._job_extractor = job_info_extractor
         self._credit_service = credit_service
         self._history_service = history_service
         self._document_parser = document_parser
@@ -123,7 +127,12 @@ class GenerateTextUseCase:
         
         try:
             # ==================== PHASE 1: VALIDATION ====================
-            cv = self._validate_and_check_credits(input_data, current_user)
+            # Validation centralisée via helper
+            cv = self._validator.validate_cv_and_credits(
+                cv_id=input_data.cv_id,
+                user=current_user,
+                credit_type='text'
+            )
             logger.info(f"[Use Case] ✓ Validation OK - CV: {cv.filename}")
             
             # ==================== PHASE 2: EXTRACTION CV ====================
@@ -182,38 +191,6 @@ class GenerateTextUseCase:
             raise RuntimeError(f"Erreur lors de la génération du texte: {str(e)}")
     
     # ==================== MÉTHODES PRIVÉES ====================
-    
-    def _validate_and_check_credits(self, input_data: GenerateTextInput, user: User):
-        """
-        Valide le CV et vérifie les crédits disponibles.
-        
-        Args:
-            input_data: Données d'entrée
-            user: Utilisateur courant
-        
-        Returns:
-            CV entité validée
-        
-        Raises:
-            ValueError: Si cv_id manquant ou CV invalide
-            RuntimeError: Si crédits insuffisants
-        """
-        # Vérifier que cv_id est fourni
-        if not input_data.cv_id:
-            raise ValueError(
-                "Aucun CV sélectionné. Veuillez d'abord télécharger et sélectionner un CV."
-            )
-        
-        # Valider le CV (appartenance, existence)
-        cv = self._cv_validation.get_and_validate_cv(input_data.cv_id, user)
-        
-        # Vérifier les crédits AVANT génération (pas de décompte ici)
-        if not self._credit_service.has_text_credits(user):
-            raise RuntimeError(
-                f"Crédits texte insuffisants. Crédits disponibles: {user.text_credits}"
-            )
-        
-        return cv
     
     def _extract_cv_content(self, cv_path: Path) -> str:
         """
@@ -344,18 +321,8 @@ class GenerateTextUseCase:
             status: Statut de la génération
         """
         try:
-            # Extraire les infos de l'offre (best effort)
-            company_name = None
-            job_title = None
-            
-            if 'welcometothejungle' in job_url:
-                try:
-                    parts = job_url.split('/')
-                    if len(parts) >= 6:
-                        company_name = parts[4].replace('-', ' ').title()
-                        job_title = parts[6].split('?')[0].replace('-', ' ').title()
-                except Exception:
-                    pass  # Extraction infos non critique
+            # Extraction infos job centralisée via helper
+            company_name, job_title = self._job_extractor.extract_from_url(job_url)
             
             # Enregistrer dans l'historique
             self._history_service.record_generation(

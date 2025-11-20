@@ -23,6 +23,8 @@ from domain.services.letter_generation_service import LetterGenerationService
 from domain.services.admin_service import AdminService
 from domain.services.promo_code_service import PromoCodeService
 from domain.services.generation_history_service import GenerationHistoryService
+from domain.services.use_case_validator import UseCaseValidator
+from domain.services.job_info_extractor import JobInfoExtractor
 
 # Use Cases
 from domain.use_cases.generate_cover_letter import GenerateCoverLetterUseCase
@@ -102,10 +104,24 @@ def get_history_service(
     return GenerationHistoryService(history_repo)
 
 
+def get_job_info_extractor() -> JobInfoExtractor:
+    """Factory pour JobInfoExtractor (stateless service)"""
+    return JobInfoExtractor()
+
+
+def get_use_case_validator(
+    cv_validation: CvValidationService = Depends(get_cv_validation_service),
+    credit_service: CreditService = Depends(get_credit_service)
+) -> UseCaseValidator:
+    """Factory pour UseCaseValidator (helper service)"""
+    return UseCaseValidator(cv_validation, credit_service)
+
+
 # === Use Case Factories ===
 
 def get_generate_cover_letter_use_case(
-    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
+    use_case_validator: UseCaseValidator = Depends(get_use_case_validator),
+    job_info_extractor: JobInfoExtractor = Depends(get_job_info_extractor),
     credit_service: CreditService = Depends(get_credit_service),
     letter_generation_service: LetterGenerationService = Depends(get_letter_generation_service),
     history_service: GenerationHistoryService = Depends(get_history_service),
@@ -114,7 +130,8 @@ def get_generate_cover_letter_use_case(
 ) -> GenerateCoverLetterUseCase:
     """Factory pour GenerateCoverLetterUseCase"""
     return GenerateCoverLetterUseCase(
-        cv_validation_service=cv_validation_service,
+        use_case_validator=use_case_validator,
+        job_info_extractor=job_info_extractor,
         credit_service=credit_service,
         letter_generation_service=letter_generation_service,
         history_service=history_service,
@@ -124,7 +141,8 @@ def get_generate_cover_letter_use_case(
 
 
 def get_generate_text_use_case(
-    cv_validation_service: CvValidationService = Depends(get_cv_validation_service),
+    use_case_validator: UseCaseValidator = Depends(get_use_case_validator),
+    job_info_extractor: JobInfoExtractor = Depends(get_job_info_extractor),
     credit_service: CreditService = Depends(get_credit_service),
     history_service: GenerationHistoryService = Depends(get_history_service)
 ) -> GenerateTextUseCase:
@@ -143,7 +161,8 @@ def get_generate_text_use_case(
         return OpenAiLlm()
     
     return GenerateTextUseCase(
-        cv_validation_service=cv_validation_service,
+        use_case_validator=use_case_validator,
+        job_info_extractor=job_info_extractor,
         credit_service=credit_service,
         history_service=history_service,
         document_parser=PyPdfParser(),
