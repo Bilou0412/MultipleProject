@@ -33,6 +33,7 @@ from domain.use_cases.generate_text import GenerateTextUseCase
 from domain.use_cases.upload_cv import UploadCvUseCase
 from domain.use_cases.download_history_file import DownloadHistoryFileUseCase
 from domain.use_cases.download_letter import DownloadLetterUseCase
+from domain.use_cases.delete_cv import DeleteCvUseCase
 
 logger = setup_logger(__name__)
 
@@ -219,6 +220,20 @@ def get_download_letter_use_case(
         letter_repository=letter_repository,
         file_storage=LocalFileStorage(),
         filename_builder=filename_builder
+    )
+
+
+def get_delete_cv_use_case(
+    cv_repository: PostgresCvRepository = Depends(get_cv_repository),
+    cv_validation_service: CvValidationService = Depends(get_cv_validation_service)
+) -> DeleteCvUseCase:
+    """Factory pour DeleteCvUseCase"""
+    from infrastructure.adapters.local_file_storage import LocalFileStorage
+    
+    return DeleteCvUseCase(
+        cv_repository=cv_repository,
+        file_storage=LocalFileStorage(),
+        cv_validation_service=cv_validation_service
     )
 
 

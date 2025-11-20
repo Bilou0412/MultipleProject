@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from api.dependencies import get_current_user, get_db, get_download_history_file_use_case, get_download_letter_use_case
+from api.dependencies import get_current_user, get_db, get_download_history_file_use_case, get_download_letter_use_case, get_delete_cv_use_case
 from domain.entities.user import User
 from domain.services.cv_validation_service import CvValidationService
 from infrastructure.adapters.postgres_cv_repository import PostgresCvRepository
@@ -106,7 +106,7 @@ async def download_history_file(
 async def cleanup_files(
     cv_id: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    use_case = Depends(get_delete_cv_use_case)
 ):
     """
     Supprime un CV et ses fichiers associés.
@@ -114,7 +114,7 @@ async def cleanup_files(
     Args:
         cv_id: ID du CV à supprimer
         current_user: Utilisateur connecté (injecté)
-        db: Session de base de données (injectée)
+        use_case: Use case de suppression (injecté)
     
     Returns:
         Message de succès
@@ -124,20 +124,12 @@ async def cleanup_files(
         HTTPException 404: CV introuvable
         HTTPException 500: Erreur serveur
     """
-    try:
-        cv_validation_service = CvValidationService(PostgresCvRepository(db))
-        cv = cv_validation_service.get_and_validate_cv(cv_id, current_user)
-        
-        # Supprimer fichier et base de données
-        file_storage.delete_cv(cv_id)
-        cv_repo = PostgresCvRepository(db)
-        cv_repo.delete(cv_id)
-        
-        logger.info(f"CV supprimé: {cv_id} par {current_user.email}")
-        return {"status": "success"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Erreur suppression: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Créer l'input du use case
+    from domain.use_cases.delete_cv import DeleteCvInput
+    
+    input_data = DeleteCvInput(cv_id=cv_id)
+    
+    # Exécuter le use case (transaction atomique)
+    output = use_case.execute(input_data, current_user)
+    
+    return {"status": output.status, "message": output.message}
